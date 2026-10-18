@@ -15,7 +15,3 @@ gatherUsageStats = false
 [runner]
 fastReruns = true
 
-[connections.supabase]
-SUPABASE_URL = "https://oicutagoajugirdjoats.supabase.co/rest/v1/
-"
-SUPABASE_KEY = "sb_publishable_zzRDnTP3UTWSbW7cg7rDRQ_8f0inIuV "
