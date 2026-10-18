@@ -1,123 +1,54 @@
+# core/db.py
 import streamlit as st
-import sqlite3
-from pathlib import Path
-import pandas as pd
+from supabase import create_client, Client
+import json
 
-DB_PATH = Path(__file__).parent.parent / "data" / "accounting.db"
-DB_PATH.parent.mkdir(exist_ok=True)
+# ============================================================
+# SUPABASE CONNECTION
+# ============================================================
 
-def get_conn():
-    """Database connection ရယူခြင်း"""
-    conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    return conn
+@st.cache_resource
+def get_supabase() -> Client:
+    """Supabase Client ကို ရယူခြင်း (secrets.toml မှ)"""
+    url = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
+    key = st.secrets["connections"]["supabase"]["SUPABASE_KEY"]
+    return create_client(url, key)
 
-def get_connection():
-    """Alias for get_conn()"""
-    return get_conn()
 
 def init_db():
-    conn = get_conn()
-    c = conn.cursor()
-
-    c.executescript("""
-    CREATE TABLE IF NOT EXISTS clients (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        business_name TEXT,
-        address TEXT,
-        business_type TEXT,
-        template_type TEXT DEFAULT 'manufacturing',
-        fiscal_year_end TEXT DEFAULT '09-30',
-        email TEXT,
-        phone TEXT,
-        notes TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS statements (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        client_id INTEGER NOT NULL,
-        fiscal_year TEXT NOT NULL,
-        period_end TEXT NOT NULL,
-        statement_type TEXT NOT NULL,
-        status TEXT DEFAULT 'draft',
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY(client_id) REFERENCES clients(id),
-        UNIQUE(client_id, fiscal_year, statement_type)
-    );
-
-    CREATE TABLE IF NOT EXISTS line_items (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        statement_id INTEGER NOT NULL,
-        sr_no TEXT,
-        section TEXT,
-        label TEXT NOT NULL,
-        value REAL DEFAULT 0,
-        indent_level INTEGER DEFAULT 0,
-        is_calculated INTEGER DEFAULT 0,
-        calc_type TEXT,
-        calc_formula TEXT,
-        is_bold INTEGER DEFAULT 0,
-        sort_order INTEGER,
-        FOREIGN KEY(statement_id) REFERENCES statements(id)
-    );
-    """)
-
-    conn.commit()
-    conn.close()
+    """Supabase မှာ Table တွေ ရှိပြီးသားဖြစ်လို့ ဘာမှ လုပ်စရာ မလိုပါ"""
+    pass
 
 
-@st.cache_data(ttl=30)
-def query_df(sql, params=()):
-    conn = get_conn()
-    df = pd.read_sql_query(sql, conn, params=params)
-    conn.close()
-    return df
-
-
-def execute(sql, params=()):
-    conn = get_conn()
-    c = conn.cursor()
-    c.execute(sql, params)
-    conn.commit()
-    last_id = c.lastrowid
-    conn.close()
-    st.cache_data.clear()
-    return last_id
-
-# core/db.py ထဲ ထည့်ရန်
+# ============================================================
+# DASHBOARD HELPERS
+# ============================================================
 
 def get_dashboard_stats() -> dict:
     """Dashboard အတွက် stats ရယူခြင်း"""
-    conn = get_connection()
-    cursor = conn.cursor()
-    
+    supabase = get_supabase()
     try:
         # Total clients
-        cursor.execute("SELECT COUNT(*) FROM clients")
-        total_clients = cursor.fetchone()[0]
+        res = supabase.table("clients").select("*", count="exact").execute()
+        total_clients = res.count if res.count else 0
         
-        # Total statements
-        try:
-            cursor.execute("""
-                SELECT 
-                    (SELECT COUNT(*) FROM manufacturing) +
-                    (SELECT COUNT(*) FROM trading_pl) +
-                    (SELECT COUNT(*) FROM balance_sheet)
-            """)
-            total_statements = cursor.fetchone()[0]
-        except Exception:
-            total_statements = 0
+        # Total statements (၄ ခုပေါင်း)
+        total_statements = 0
+        for table in ["manufacturing", "trading_pl", "balance_sheet", "cash_flow"]:
+            try:
+                res = supabase.table(table).select("*", count="exact").execute()
+                total_statements += res.count if res.count else 0
+            except Exception:
+                pass
         
         # Latest update
         try:
-            cursor.execute("""
-                SELECT MAX(updated_at) FROM clients
-            """)
-            latest = cursor.fetchone()[0]
-            latest_update = latest[:10] if latest else "—"
+            res = supabase.table("clients").select("created_at").order("created_at", desc=True).limit(1).execute()
+            if res.data:
+                latest = res.data[0]["created_at"]
+                latest_update = latest[:10] if latest else "—"
+            else:
+                latest_update = "—"
         except Exception:
             latest_update = "—"
         
@@ -126,27 +57,20 @@ def get_dashboard_stats() -> dict:
             "total_statements": total_statements,
             "latest_update": latest_update,
         }
-    finally:
-        conn.close()
+    except Exception as e:
+        print(f"Dashboard stats error: {e}")
+        return {"total_clients": 0, "total_statements": 0, "latest_update": "—"}
 
 
 def get_recent_clients(limit: int = 5) -> list:
     """မကြာသေးမီ ဖောက်သည်များ ရယူခြင်း"""
-    conn = get_connection()
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    
+    supabase = get_supabase()
     try:
-        cursor.execute("""
-            SELECT id, name, business_type, phone, updated_at
-            FROM clients
-            ORDER BY updated_at DESC
-            LIMIT ?
-        """, (limit,))
-        rows = cursor.fetchall()
-        return [dict(row) for row in rows]
-    finally:
-        conn.close()
+        res = supabase.table("clients").select("*").order("created_at", desc=True).limit(limit).execute()
+        return res.data
+    except Exception:
+        return []
+
 
 # ============================================================
 # CLIENT CRUD
@@ -157,52 +81,37 @@ def create_client(name: str, business_name: str = "",
                   address: str = "", fiscal_year_end: str = "09-30",
                   **kwargs) -> int:
     """ဖောက်သည် အသစ် ဖန်တီးခြင်း"""
-    conn = get_conn()
-    cursor = conn.cursor()
-    try:
-        cursor.execute("""
-            INSERT INTO clients 
-                (name, business_name, business_type, email, address, fiscal_year_end)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (name, business_name, business_type, email, address, fiscal_year_end))
-        conn.commit()
-        return cursor.lastrowid
-    finally:
-        conn.close()
+    supabase = get_supabase()
+    data = {
+        "name": name,
+        "business_name": business_name,
+        "business_type": business_type,
+        "email": email,
+        "address": address,
+        "fiscal_year_end": fiscal_year_end,
+    }
+    res = supabase.table("clients").insert(data).execute()
+    return res.data[0]["id"]
 
 
 def get_all_clients() -> list:
     """ဖောက်သည် အားလုံး"""
-    conn = get_conn()
-    cursor = conn.cursor()
+    supabase = get_supabase()
     try:
-        cursor.execute("""
-            SELECT id, name, business_name, business_type, email, 
-                   address, fiscal_year_end, created_at, updated_at
-            FROM clients
-            ORDER BY name
-        """)
-        rows = cursor.fetchall()
-        return [dict(row) for row in rows]
-    finally:
-        conn.close()
+        res = supabase.table("clients").select("*").order("name").execute()
+        return res.data
+    except Exception:
+        return []
 
 
 def get_client(client_id: int):
     """ဖောက်သည် တစ်ဦး"""
-    conn = get_conn()
-    cursor = conn.cursor()
+    supabase = get_supabase()
     try:
-        cursor.execute("""
-            SELECT id, name, business_name, business_type, email,
-                   address, fiscal_year_end, created_at, updated_at
-            FROM clients
-            WHERE id = ?
-        """, (client_id,))
-        row = cursor.fetchone()
-        return dict(row) if row else None
-    finally:
-        conn.close()
+        res = supabase.table("clients").select("*").eq("id", client_id).execute()
+        return res.data[0] if res.data else None
+    except Exception:
+        return None
 
 
 def update_client(client_id: int, **kwargs) -> bool:
@@ -210,7 +119,6 @@ def update_client(client_id: int, **kwargs) -> bool:
     if not kwargs:
         return False
     
-    # Allow only these fields
     allowed = {"name", "business_name", "business_type", 
                "email", "address", "fiscal_year_end"}
     fields_to_update = {k: v for k, v in kwargs.items() if k in allowed}
@@ -218,128 +126,81 @@ def update_client(client_id: int, **kwargs) -> bool:
     if not fields_to_update:
         return False
     
-    set_clause = ", ".join(f"{k} = ?" for k in fields_to_update.keys())
-    values = list(fields_to_update.values()) + [client_id]
-    
-    conn = get_conn()
-    cursor = conn.cursor()
+    supabase = get_supabase()
     try:
-        cursor.execute(
-            f"UPDATE clients SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            values
-        )
-        conn.commit()
-        return cursor.rowcount > 0
-    finally:
-        conn.close()
+        res = supabase.table("clients").update(fields_to_update).eq("id", client_id).execute()
+        return len(res.data) > 0
+    except Exception as e:
+        print(f"Update error: {e}")
+        return False
 
 
 def delete_client(client_id: int) -> bool:
     """ဖောက်သည် ဖျက်ခြင်း"""
-    conn = get_conn()
-    cursor = conn.cursor()
+    supabase = get_supabase()
     try:
-        cursor.execute("DELETE FROM clients WHERE id = ?", (client_id,))
-        conn.commit()
-        return cursor.rowcount > 0
-    finally:
-        conn.close()
+        res = supabase.table("clients").delete().eq("id", client_id).execute()
+        return len(res.data) > 0
+    except Exception as e:
+        print(f"Delete error: {e}")
+        return False
 
 
 def count_clients() -> int:
     """ဖောက်သည် အရေအတွက်"""
-    conn = get_conn()
-    cursor = conn.cursor()
+    supabase = get_supabase()
     try:
-        cursor.execute("SELECT COUNT(*) FROM clients")
-        return cursor.fetchone()[0]
-    finally:
-        conn.close()
+        res = supabase.table("clients").select("*", count="exact").execute()
+        return res.count if res.count else 0
+    except Exception:
+        return 0
+
+
+# ============================================================
+# STATEMENT HELPERS
+# ============================================================
 
 def get_statement(client_id: int, statement_type: str):
-    table_map = {
-        "manufacturing": "manufacturing",
-        "trading_pl": "trading_pl",
-        "balance_sheet": "balance_sheet",
-        "cash_flow": "cash_flow",           # ← ⚠️ ဒါ ပါမပါ စစ်ပါ
-    }
-    # ...
-    
-    table = table_map.get(statement_type)
-    if not table:
-        return None
-    
-    conn = get_conn()
-    cursor = conn.cursor()
+    """ရှင်းတမ်း တစ်ခု ရယူခြင်း"""
+    supabase = get_supabase()
     try:
-        cursor.execute(
-            f"SELECT * FROM {table} WHERE client_id = ? ORDER BY id DESC LIMIT 1",
-            (client_id,)
-        )
-        row = cursor.fetchone()
-        return dict(row) if row else None
+        res = supabase.table(statement_type).select("*").eq("client_id", client_id).order("id", desc=True).limit(1).execute()
+        return res.data[0] if res.data else None
     except Exception:
         return None
-    finally:
-        conn.close()
 
 
 def save_statement(client_id: int, statement_type: str,
                    period_end: str = "", data_json: str = "",
                    as_at_date: str = "", **kwargs) -> int:
-    """Save/update statement"""
-    # save_statement() ထဲမှာ
-    table_map = {
-    "manufacturing": "manufacturing",
-    "trading_pl": "trading_pl",
-    "balance_sheet": "balance_sheet",
-    "cash_flow": "cash_flow",           # ← အသစ်
-    }
-
-    # get_statement() ထဲမှာ
-    table_map = {
-    "manufacturing": "manufacturing",
-    "trading_pl": "trading_pl",
-    "balance_sheet": "balance_sheet",
-    "cash_flow": "cash_flow",           # ← အသစ်
-    }
-
-    table = table_map.get(statement_type)
-    if not table:
-        raise ValueError(f"မသိသော statement type: {statement_type}")
-
-    conn = get_conn()
-    cursor = conn.cursor()
+    """ရှင်းတမ်း သိမ်းခြင်း (ရှိပြီးသားဆိုရင် update)"""
+    supabase = get_supabase()
+    
+    # String ဖြစ်ရင် dict ပြောင်း
+    if isinstance(data_json, str):
+        data_dict = json.loads(data_json)
+    else:
+        data_dict = data_json
+    
+    date_val = period_end or as_at_date
+    
     try:
-        # Check if exists
-        cursor.execute(f"SELECT id FROM {table} WHERE client_id = ? LIMIT 1", (client_id,))
-        row = cursor.fetchone()
-
-        # Balance Sheet အတွက် — as_at_date
-        if statement_type == "balance_sheet":
-            date_col = "as_at_date"
-            date_val = as_at_date or period_end
+        # ရှိပြီးသား စစ်
+        existing = get_statement(client_id, statement_type)
+        
+        if existing:
+            res = supabase.table(statement_type).update({
+                "period_end": date_val,
+                "data": data_dict,
+            }).eq("id", existing["id"]).execute()
+            return existing["id"]
         else:
-            date_col = "period_end"
-            date_val = period_end
-
-        if row:
-            cursor.execute(
-                f"""UPDATE {table} 
-                    SET {date_col} = ?, data = ?, updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ?""",
-                (date_val, data_json, row[0])
-            )
-            result_id = row[0]
-        else:
-            cursor.execute(
-                f"""INSERT INTO {table} (client_id, {date_col}, data)
-                    VALUES (?, ?, ?)""",
-                (client_id, date_val, data_json)
-            )
-            result_id = cursor.lastrowid
-
-        conn.commit()
-        return result_id
-    finally:
-        conn.close()
+            res = supabase.table(statement_type).insert({
+                "client_id": client_id,
+                "period_end": date_val,
+                "data": data_dict,
+            }).execute()
+            return res.data[0]["id"]
+    except Exception as e:
+        print(f"Save statement error: {e}")
+        raise e
