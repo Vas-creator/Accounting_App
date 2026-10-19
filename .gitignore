@@ -28,3 +28,5 @@ assets/stamp.png
 .vscode/
 .idea/
 config.yaml
+
+.streamlit/secrets.toml

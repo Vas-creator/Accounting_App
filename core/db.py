@@ -1,18 +1,15 @@
 # core/db.py
 import streamlit as st
-from supabase import create_client, Client
+from st_supabase_connection import SupabaseConnection
 import json
 
 # ============================================================
 # SUPABASE CONNECTION
 # ============================================================
 
-@st.cache_resource
-def get_supabase() -> Client:
-    """Supabase Client ကို ရယူခြင်း (secrets.toml မှ)"""
-    url = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
-    key = st.secrets["connections"]["supabase"]["SUPABASE_KEY"]
-    return create_client(url, key)
+def get_supabase():
+    """Supabase Connection ကို ရယူခြင်း"""
+    return st.connection("supabase", type=SupabaseConnection)
 
 
 def init_db():
@@ -26,24 +23,25 @@ def init_db():
 
 def get_dashboard_stats() -> dict:
     """Dashboard အတွက် stats ရယူခြင်း"""
-    supabase = get_supabase()
     try:
+        conn = get_supabase()
+        
         # Total clients
-        res = supabase.table("clients").select("*", count="exact").execute()
+        res = conn.table("clients").select("id", count="exact").execute()
         total_clients = res.count if res.count else 0
         
-        # Total statements (၄ ခုပေါင်း)
+        # Total statements
         total_statements = 0
         for table in ["manufacturing", "trading_pl", "balance_sheet", "cash_flow"]:
             try:
-                res = supabase.table(table).select("*", count="exact").execute()
+                res = conn.table(table).select("id", count="exact").execute()
                 total_statements += res.count if res.count else 0
             except Exception:
                 pass
         
         # Latest update
         try:
-            res = supabase.table("clients").select("created_at").order("created_at", desc=True).limit(1).execute()
+            res = conn.table("clients").select("created_at").order("created_at", desc=True).limit(1).execute()
             if res.data:
                 latest = res.data[0]["created_at"]
                 latest_update = latest[:10] if latest else "—"
@@ -64,9 +62,9 @@ def get_dashboard_stats() -> dict:
 
 def get_recent_clients(limit: int = 5) -> list:
     """မကြာသေးမီ ဖောက်သည်များ ရယူခြင်း"""
-    supabase = get_supabase()
     try:
-        res = supabase.table("clients").select("*").order("created_at", desc=True).limit(limit).execute()
+        conn = get_supabase()
+        res = conn.table("clients").select("*").order("created_at", desc=True).limit(limit).execute()
         return res.data
     except Exception:
         return []
@@ -81,7 +79,7 @@ def create_client(name: str, business_name: str = "",
                   address: str = "", fiscal_year_end: str = "09-30",
                   **kwargs) -> int:
     """ဖောက်သည် အသစ် ဖန်တီးခြင်း"""
-    supabase = get_supabase()
+    conn = get_supabase()
     data = {
         "name": name,
         "business_name": business_name,
@@ -90,15 +88,15 @@ def create_client(name: str, business_name: str = "",
         "address": address,
         "fiscal_year_end": fiscal_year_end,
     }
-    res = supabase.table("clients").insert(data).execute()
+    res = conn.table("clients").insert(data).execute()
     return res.data[0]["id"]
 
 
 def get_all_clients() -> list:
     """ဖောက်သည် အားလုံး"""
-    supabase = get_supabase()
     try:
-        res = supabase.table("clients").select("*").order("name").execute()
+        conn = get_supabase()
+        res = conn.table("clients").select("*").order("name").execute()
         return res.data
     except Exception:
         return []
@@ -106,9 +104,9 @@ def get_all_clients() -> list:
 
 def get_client(client_id: int):
     """ဖောက်သည် တစ်ဦး"""
-    supabase = get_supabase()
     try:
-        res = supabase.table("clients").select("*").eq("id", client_id).execute()
+        conn = get_supabase()
+        res = conn.table("clients").select("*").eq("id", client_id).execute()
         return res.data[0] if res.data else None
     except Exception:
         return None
@@ -126,9 +124,9 @@ def update_client(client_id: int, **kwargs) -> bool:
     if not fields_to_update:
         return False
     
-    supabase = get_supabase()
     try:
-        res = supabase.table("clients").update(fields_to_update).eq("id", client_id).execute()
+        conn = get_supabase()
+        res = conn.table("clients").update(fields_to_update).eq("id", client_id).execute()
         return len(res.data) > 0
     except Exception as e:
         print(f"Update error: {e}")
@@ -137,9 +135,9 @@ def update_client(client_id: int, **kwargs) -> bool:
 
 def delete_client(client_id: int) -> bool:
     """ဖောက်သည် ဖျက်ခြင်း"""
-    supabase = get_supabase()
     try:
-        res = supabase.table("clients").delete().eq("id", client_id).execute()
+        conn = get_supabase()
+        res = conn.table("clients").delete().eq("id", client_id).execute()
         return len(res.data) > 0
     except Exception as e:
         print(f"Delete error: {e}")
@@ -148,9 +146,9 @@ def delete_client(client_id: int) -> bool:
 
 def count_clients() -> int:
     """ဖောက်သည် အရေအတွက်"""
-    supabase = get_supabase()
     try:
-        res = supabase.table("clients").select("*", count="exact").execute()
+        conn = get_supabase()
+        res = conn.table("clients").select("id", count="exact").execute()
         return res.count if res.count else 0
     except Exception:
         return 0
@@ -162,9 +160,9 @@ def count_clients() -> int:
 
 def get_statement(client_id: int, statement_type: str):
     """ရှင်းတမ်း တစ်ခု ရယူခြင်း"""
-    supabase = get_supabase()
     try:
-        res = supabase.table(statement_type).select("*").eq("client_id", client_id).order("id", desc=True).limit(1).execute()
+        conn = get_supabase()
+        res = conn.table(statement_type).select("*").eq("client_id", client_id).order("id", desc=True).limit(1).execute()
         return res.data[0] if res.data else None
     except Exception:
         return None
@@ -174,9 +172,8 @@ def save_statement(client_id: int, statement_type: str,
                    period_end: str = "", data_json: str = "",
                    as_at_date: str = "", **kwargs) -> int:
     """ရှင်းတမ်း သိမ်းခြင်း (ရှိပြီးသားဆိုရင် update)"""
-    supabase = get_supabase()
+    conn = get_supabase()
     
-    # String ဖြစ်ရင် dict ပြောင်း
     if isinstance(data_json, str):
         data_dict = json.loads(data_json)
     else:
@@ -185,17 +182,16 @@ def save_statement(client_id: int, statement_type: str,
     date_val = period_end or as_at_date
     
     try:
-        # ရှိပြီးသား စစ်
         existing = get_statement(client_id, statement_type)
         
         if existing:
-            res = supabase.table(statement_type).update({
+            res = conn.table(statement_type).update({
                 "period_end": date_val,
                 "data": data_dict,
             }).eq("id", existing["id"]).execute()
             return existing["id"]
         else:
-            res = supabase.table(statement_type).insert({
+            res = conn.table(statement_type).insert({
                 "client_id": client_id,
                 "period_end": date_val,
                 "data": data_dict,
