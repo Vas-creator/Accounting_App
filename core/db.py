@@ -8,14 +8,24 @@ import json
 # ============================================================
 
 def get_supabase():
-    """Supabase Connection ကို ရယူခြင်း"""
-    return st.connection("supabase", type=SupabaseConnection)
-
+    """Supabase Connection ကို ရယူခြင်း (URL နဲ့ Key ကို တိုက်ရိုက်ထည့်ထားတယ်)"""
+    # Secrets မှာ မရှိရင် ဒီကို သုံးမယ်
+    try:
+        conn = st.connection("supabase", type=SupabaseConnection)
+        # Connection ကို စမ်းသပ်ကြည့်
+        conn.table("clients").select("id").limit(1).execute()
+        return conn
+    except Exception:
+        # Secrets မရရင် တိုက်ရိုက် ချိတ်ဆက်
+        import os
+        from supabase import create_client
+        url = "https://oicutagoajugirdjoats.supabase.co"
+        key = "sb_publishable_KEH3kxBvss2YZsJv6Ef5SA_uyfgmWyT"
+        return create_client(url, key)
 
 def init_db():
     """Supabase မှာ Table တွေ ရှိပြီးသားဖြစ်လို့ ဘာမှ လုပ်စရာ မလိုပါ"""
     pass
-
 
 # ============================================================
 # DASHBOARD HELPERS
