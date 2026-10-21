@@ -47,47 +47,6 @@ if not client:
     st.stop()
 
 # ============================================================
-# LOAD EXISTING DATA
-# ============================================================
-
-existing = None
-saved_data = {}
-saved_date = ""
-
-try:
-    existing = db.get_statement(client_id, "balance_sheet")
-    if existing and existing.get("data"):
-        raw_data = existing["data"]
-        if isinstance(raw_data, str):
-            saved_data = json.loads(raw_data)
-        elif isinstance(raw_data, dict):
-            saved_data = raw_data
-        
-        saved_date = existing.get("as_at_date", "") or existing.get("period_end", "")
-except Exception as e:
-    print(f"Balance Sheet Load Error: {e}")
-    existing = None
-    saved_data = {}
-    saved_date = ""
-
-# Trading PL မှ Data ယူမယ်
-auto_net_profit = 0.0
-auto_depreciation = 0.0
-
-try:
-    tpl_existing = db.get_statement(client_id, "trading_pl")
-    if tpl_existing and tpl_existing.get("data"):
-        raw_tpl = tpl_existing["data"]
-        if isinstance(raw_tpl, str):
-            tpl_data = json.loads(raw_tpl)
-        else:
-            tpl_data = raw_tpl
-        auto_net_profit = float(tpl_data.get("_net_profit", 0.0))
-        auto_depreciation = float(tpl_data.get("_depreciation", 0.0))
-except Exception:
-    pass
-
-# ============================================================
 # SESSION STATE (ဖောက်သည်ပြောင်းရင် ရှင်းမယ်)
 # ============================================================
 
@@ -101,11 +60,18 @@ if st.session_state.get("current_bs_client_id") != client_id:
         if k.startswith("bs_"):
             del st.session_state[k]
 
-if "bs_data" not in st.session_state:
-    st.session_state.bs_data = dict(saved_data)
+# ============================================================
+# HISTORY: ကာလအလိုက် စာရင်းဟောင်းများ ရယူခြင်း
+# ============================================================
 
-if "bs_date" not in st.session_state:
-    st.session_state.bs_date = saved_date or str(date.today())
+history = []
+try:
+    history = db.get_statement_history(client_id, "balance_sheet")
+except Exception:
+    history = []
+
+history_dates = [h["period_end"] for h in history if h.get("period_end")]
+history_dates = sorted(list(set(history_dates)), reverse=True)
 
 # ============================================================
 # SIDEBAR
@@ -162,22 +128,85 @@ st.markdown(
 )
 
 # ============================================================
-# DATE INPUT
+# DATE & HISTORY
 # ============================================================
 
-col1, col2 = st.columns([1, 3])
-with col1:
+col_date, col_hist = st.columns([1, 1])
+
+with col_date:
+    if "bs_date" not in st.session_state:
+        st.session_state.bs_date = str(date.today())
+
     try:
         initial_date = date.fromisoformat(st.session_state.bs_date)
     except Exception:
         initial_date = date.today()
 
     as_at_date = st.date_input(
-        f"📅 {t('as_at_date')}",
+        f"📅 {t('as_at_date')} (New/Update)",
         value=initial_date,
         key="bs_date_input",
     )
     st.session_state.bs_date = str(as_at_date)
+
+with col_hist:
+    if history_dates:
+        st.markdown("**📜 သိမ်းထားသော ကာလများ (History)**")
+        options = ["-- ကာလအသစ် (New) --"] + history_dates
+        selected_history = st.selectbox("ကာလဟောင်း ပြန်ကြည့်ရန်", options=options, label_visibility="collapsed")
+
+        if selected_history != "-- ကာလအသစ် (New) --":
+            if st.session_state.get("selected_bs_history") != selected_history:
+                st.session_state.selected_bs_history = selected_history
+
+                existing_hist = db.get_statement(client_id, "balance_sheet", period_end=selected_history)
+                if existing_hist:
+                    raw_data = existing_hist.get("data")
+                    if isinstance(raw_data, str):
+                        st.session_state.bs_data = json.loads(raw_data)
+                    else:
+                        st.session_state.bs_data = raw_data or {}
+
+                    st.session_state.bs_date = selected_history
+                    st.rerun()
+    else:
+        st.info("သိမ်းထားသော စာရင်း မရှိသေးပါ။")
+
+# ============================================================
+# LOAD EXISTING (If New period)
+# ============================================================
+
+if "bs_data" not in st.session_state:
+    existing = db.get_statement(client_id, "balance_sheet")
+    if existing and existing.get("data"):
+        raw_data = existing.get("data")
+        if isinstance(raw_data, str):
+            st.session_state.bs_data = json.loads(raw_data)
+        else:
+            st.session_state.bs_data = raw_data
+    else:
+        st.session_state.bs_data = {}
+
+# ============================================================
+# TRY TO PULL TRADING PL DATA
+# ============================================================
+
+auto_net_profit = 0.0
+auto_depreciation = 0.0
+
+try:
+    # လက်ရှိ ရွေးထားတဲ့ ကာလနဲ့ ကိုက်ညီတဲ့ Trading PL ကို ယူမယ်
+    tpl_existing = db.get_statement(client_id, "trading_pl", period_end=st.session_state.bs_date)
+    if tpl_existing and tpl_existing.get("data"):
+        raw_tpl = tpl_existing["data"]
+        if isinstance(raw_tpl, str):
+            tpl_data = json.loads(raw_tpl)
+        else:
+            tpl_data = raw_tpl
+        auto_net_profit = float(tpl_data.get("_net_profit", 0.0))
+        auto_depreciation = float(tpl_data.get("_depreciation", 0.0))
+except Exception:
+    pass
 
 # ============================================================
 # HELPER FUNCTIONS
@@ -191,7 +220,6 @@ def num_input(label: str, key: str, is_deduction: bool = False, default: float =
 
     prefix = "➖ " if is_deduction else ""
     
-    # ⭐ int နဲ့ %d ကို သုံးမယ် (ဒသမ မပါအောင်)
     result = st.number_input(
         f"{prefix}{label}",
         value=int(value) if value else 0,
@@ -261,7 +289,6 @@ with col2:
     eq_capital = num_input("အရင်း (Capital)" if st.session_state.get("language") == "my" else "Capital", "eq_capital")
     eq_retain = num_input("စုဆောင်း အမြတ် (Retain Earning)" if st.session_state.get("language") == "my" else "Retain Earning", "eq_retain")
 
-    # ⭐ eq_profit ကိုလည်း int နဲ့ %d ပြောင်းမယ်
     eq_profit = st.number_input(
         "📈 ယခုနှစ် အမြတ် (Profit for the year) — Trading မှ" if st.session_state.get("language") == "my" else "📈 Profit for the year (from Trading)",
         value=int(st.session_state.bs_data.get("eq_profit", auto_net_profit)),
@@ -418,5 +445,3 @@ with col4:
 st.divider()
 st.caption(f"📅 {t('as_at_date')}: {format_date_mm(st.session_state.bs_date)}")
 st.caption(f"👤 {t('clients')}: {client['name']}")
-if existing and existing.get("updated_at"):
-    st.caption(f"🔄 {t('updated')}: {format_date_mm(existing.get('updated_at', ''))}")

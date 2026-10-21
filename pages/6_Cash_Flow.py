@@ -52,58 +52,6 @@ if not client:
     st.stop()
 
 # ============================================================
-# LOAD EXISTING DATA
-# ============================================================
-
-existing = None
-saved_data = {}
-saved_period = ""
-
-try:
-    existing = db.get_statement(client_id, "cash_flow")
-    if existing and existing.get("data"):
-        raw_data = existing["data"]
-        if isinstance(raw_data, str):
-            saved_data = json.loads(raw_data)
-        elif isinstance(raw_data, dict):
-            saved_data = raw_data
-        saved_period = existing.get("period_end", "")
-except Exception:
-    existing = None
-    saved_data = {}
-    saved_period = ""
-
-# Trading & P&L မှ ယူမယ်
-auto_net_profit = 0.0
-auto_depreciation = 0.0
-
-try:
-    tpl_existing = db.get_statement(client_id, "trading_pl")
-    if tpl_existing and tpl_existing.get("data"):
-        raw_tpl = tpl_existing["data"]
-        if isinstance(raw_tpl, str):
-            tpl_data = json.loads(raw_tpl)
-        else:
-            tpl_data = raw_tpl
-        auto_net_profit = float(tpl_data.get("_net_profit", 0.0))
-        auto_depreciation = float(tpl_data.get("_depreciation", 0.0))
-except Exception:
-    pass
-
-# Balance Sheet မှ ယူမယ်
-auto_bs = {}
-try:
-    bs_existing = db.get_statement(client_id, "balance_sheet")
-    if bs_existing and bs_existing.get("data"):
-        raw_bs = bs_existing["data"]
-        if isinstance(raw_bs, str):
-            auto_bs = json.loads(raw_bs)
-        else:
-            auto_bs = raw_bs
-except Exception:
-    auto_bs = {}
-
-# ============================================================
 # SESSION STATE (ဖောက်သည်ပြောင်းရင် ရှင်းမယ်)
 # ============================================================
 
@@ -117,11 +65,18 @@ if st.session_state.get("current_cf_client_id") != client_id:
         if k.startswith("cf_"):
             del st.session_state[k]
 
-if "cf_data" not in st.session_state:
-    st.session_state.cf_data = dict(saved_data)
+# ============================================================
+# HISTORY: ကာလအလိုက် စာရင်းဟောင်းများ ရယူခြင်း
+# ============================================================
 
-if "cf_period" not in st.session_state:
-    st.session_state.cf_period = saved_period or str(date.today())
+history = []
+try:
+    history = db.get_statement_history(client_id, "cash_flow")
+except Exception:
+    history = []
+
+history_periods = [h["period_end"] for h in history if h.get("period_end")]
+history_periods = sorted(list(set(history_periods)), reverse=True)
 
 # ============================================================
 # SIDEBAR
@@ -180,22 +135,94 @@ st.markdown(
 )
 
 # ============================================================
-# PERIOD
+# PERIOD & HISTORY
 # ============================================================
 
-col1, col2 = st.columns([1, 3])
-with col1:
+col_date, col_hist = st.columns([1, 1])
+
+with col_date:
+    if "cf_period" not in st.session_state:
+        st.session_state.cf_period = str(date.today())
+
     try:
         initial_date = date.fromisoformat(st.session_state.cf_period)
     except Exception:
         initial_date = date.today()
 
     period_end = st.date_input(
-        f"📅 {t('period_end')}",
+        f"📅 {t('period_end')} (New/Update)",
         value=initial_date,
         key="cf_period_input",
     )
     st.session_state.cf_period = str(period_end)
+
+with col_hist:
+    if history_periods:
+        st.markdown("**📜 သိမ်းထားသော ကာလများ (History)**")
+        options = ["-- ကာလအသစ် (New) --"] + history_periods
+        selected_history = st.selectbox("ကာလဟောင်း ပြန်ကြည့်ရန်", options=options, label_visibility="collapsed")
+
+        if selected_history != "-- ကာလအသစ် (New) --":
+            if st.session_state.get("selected_cf_history") != selected_history:
+                st.session_state.selected_cf_history = selected_history
+
+                existing_hist = db.get_statement(client_id, "cash_flow", period_end=selected_history)
+                if existing_hist:
+                    raw_data = existing_hist.get("data")
+                    if isinstance(raw_data, str):
+                        st.session_state.cf_data = json.loads(raw_data)
+                    else:
+                        st.session_state.cf_data = raw_data or {}
+
+                    st.session_state.cf_period = selected_history
+                    st.rerun()
+    else:
+        st.info("သိမ်းထားသော စာရင်း မရှိသေးပါ။")
+
+# ============================================================
+# LOAD EXISTING (If New period)
+# ============================================================
+
+if "cf_data" not in st.session_state:
+    existing = db.get_statement(client_id, "cash_flow")
+    if existing and existing.get("data"):
+        raw_data = existing.get("data")
+        if isinstance(raw_data, str):
+            st.session_state.cf_data = json.loads(raw_data)
+        else:
+            st.session_state.cf_data = raw_data
+    else:
+        st.session_state.cf_data = {}
+
+# Trading & P&L မှ ယူမယ် (လက်ရှိကာလနဲ့ ကိုက်ညီတာ)
+auto_net_profit = 0.0
+auto_depreciation = 0.0
+
+try:
+    tpl_existing = db.get_statement(client_id, "trading_pl", period_end=st.session_state.cf_period)
+    if tpl_existing and tpl_existing.get("data"):
+        raw_tpl = tpl_existing["data"]
+        if isinstance(raw_tpl, str):
+            tpl_data = json.loads(raw_tpl)
+        else:
+            tpl_data = raw_tpl
+        auto_net_profit = float(tpl_data.get("_net_profit", 0.0))
+        auto_depreciation = float(tpl_data.get("_depreciation", 0.0))
+except Exception:
+    pass
+
+# Balance Sheet မှ ယူမယ် (လက်ရှိကာလနဲ့ ကိုက်ညီတာ)
+auto_bs = {}
+try:
+    bs_existing = db.get_statement(client_id, "balance_sheet", period_end=st.session_state.cf_period)
+    if bs_existing and bs_existing.get("data"):
+        raw_bs = bs_existing["data"]
+        if isinstance(raw_bs, str):
+            auto_bs = json.loads(raw_bs)
+        else:
+            auto_bs = raw_bs
+except Exception:
+    auto_bs = {}
 
 # ============================================================
 # HELPER — WORKING CAPITAL CHANGE
@@ -663,5 +690,3 @@ with col4:
 st.divider()
 st.caption(f"📅 {t('period_end')}: {format_date_mm(st.session_state.cf_period)}")
 st.caption(f"👤 {t('clients')}: {client['name']}")
-if existing and existing.get("updated_at"):
-    st.caption(f"🔄 {t('updated')}: {format_date_mm(existing.get('updated_at', ''))}")

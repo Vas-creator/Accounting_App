@@ -9,14 +9,11 @@ import json
 
 def get_supabase():
     """Supabase Connection ကို ရယူခြင်း (URL နဲ့ Key ကို တိုက်ရိုက်ထည့်ထားတယ်)"""
-    # Secrets မှာ မရှိရင် ဒီကို သုံးမယ်
     try:
         conn = st.connection("supabase", type=SupabaseConnection)
-        # Connection ကို စမ်းသပ်ကြည့်
         conn.table("clients").select("id").limit(1).execute()
         return conn
     except Exception:
-        # Secrets မရရင် တိုက်ရိုက် ချိတ်ဆက်
         import os
         from supabase import create_client
         url = "https://oicutagoajugirdjoats.supabase.co"
@@ -36,11 +33,9 @@ def get_dashboard_stats() -> dict:
     try:
         conn = get_supabase()
         
-        # Total clients
         res = conn.table("clients").select("id", count="exact").execute()
         total_clients = res.count if res.count else 0
         
-        # Total statements
         total_statements = 0
         for table in ["manufacturing", "trading_pl", "balance_sheet", "cash_flow"]:
             try:
@@ -49,7 +44,6 @@ def get_dashboard_stats() -> dict:
             except Exception:
                 pass
         
-        # Latest update
         try:
             res = conn.table("clients").select("created_at").order("created_at", desc=True).limit(1).execute()
             if res.data:
@@ -165,23 +159,47 @@ def count_clients() -> int:
 
 
 # ============================================================
-# STATEMENT HELPERS
+# STATEMENT HELPERS (HISTORY ENABLED)
 # ============================================================
 
-def get_statement(client_id: int, statement_type: str):
-    """ရှင်းတမ်း တစ်ခု ရယူခြင်း"""
+def get_statement(client_id: int, statement_type: str, period_end: str = None):
+    """
+    ရှင်းတမ်း တစ်ခု ရယူခြင်း။
+    period_end ပေးထားရင် အဲ့ဒီကာလရဲ့ စာရင်းကို ယူမယ်။
+    မပေးထားရင် နောက်ဆုံးသိမ်းထားတာကို ယူမယ်။
+    """
     try:
         conn = get_supabase()
-        res = conn.table(statement_type).select("*").eq("client_id", client_id).order("id", desc=True).limit(1).execute()
+        query = conn.table(statement_type).select("*").eq("client_id", client_id)
+        
+        if period_end:
+            query = query.eq("period_end", period_end)
+            
+        res = query.order("id", desc=True).limit(1).execute()
         return res.data[0] if res.data else None
     except Exception:
         return None
 
 
+def get_statement_history(client_id: int, statement_type: str) -> list:
+    """ရှင်းတမ်း တစ်ခုရဲ့ ကာလအလိုက် စာရင်းအားလုံး (History) ကို ရယူခြင်း"""
+    try:
+        conn = get_supabase()
+        res = conn.table(statement_type).select("*").eq("client_id", client_id).order("period_end", desc=True).execute()
+        return res.data if res.data else []
+    except Exception as e:
+        print(f"History error: {e}")
+        return []
+
+
 def save_statement(client_id: int, statement_type: str,
                    period_end: str = "", data_json: str = "",
                    as_at_date: str = "", custom_data: list = None, **kwargs) -> int:
-    """ရှင်းတမ်း သိမ်းခြင်း (custom_data ပါဝင်တယ်)"""
+    """
+    ရှင်းတမ်း သိမ်းခြင်း။ 
+    ကာလ (period_end) တူရင် အဟောင်းကို Update လုပ်မယ်။
+    မတူရင် အသစ် (Insert) ထပ်ထည့်မယ် (History အတွက်)။
+    """
     conn = get_supabase()
     
     if isinstance(data_json, str):
@@ -192,21 +210,24 @@ def save_statement(client_id: int, statement_type: str,
     date_val = period_end or as_at_date
     
     try:
-        existing = get_statement(client_id, statement_type)
+        # ⭐ ကာလတူတဲ့ စာရင်း ရှိမရှိ စစ်မယ်
+        existing = get_statement(client_id, statement_type, period_end=date_val)
         
         payload = {
             "period_end": date_val,
             "data": data_dict,
         }
         
-        # trading_pl အတွက်ပဲ custom_data ထည့်မယ်
-        if statement_type == "trading_pl":
+        # trading_pl နဲ့ manufacturing အတွက် custom_data ထည့်မယ်
+        if statement_type in ["trading_pl", "manufacturing"]:
             payload["custom_data"] = custom_data or []
         
         if existing:
+            # ရှိရင် Update လုပ်မယ် (အဟောင်းကို ပြင်တာ)
             res = conn.table(statement_type).update(payload).eq("id", existing["id"]).execute()
             return existing["id"]
         else:
+            # မရှိရင် အသစ်ထည့်မယ် (History အသစ်)
             payload["client_id"] = client_id
             res = conn.table(statement_type).insert(payload).execute()
             return res.data[0]["id"]
