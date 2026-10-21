@@ -2,9 +2,6 @@
 """
 Accounting App — Main Entry Point
 Home Dashboard + Authentication
-
-For: Retired Account Officer (Dad)
-Tech: Streamlit + SQLite + streamlit-authenticator
 """
 from core.translations import t
 import os
@@ -14,7 +11,7 @@ import yaml
 from yaml.loader import SafeLoader
 
 # ============================================================
-# 1. PAGE CONFIG — ပထမဆုံး Streamlit command ဖြစ်ရမည်
+# 1. PAGE CONFIG
 # ============================================================
 
 st.set_page_config(
@@ -25,15 +22,14 @@ st.set_page_config(
 )
 
 if "language" not in st.session_state:
-    st.session_state.language = "my"  # default က မြန်မာ
+    st.session_state.language = "my"
 
 # ============================================================
-# 2. IMPORTS — Project modules
+# 2. IMPORTS
 # ============================================================
 
 from core import db
 from core.utils import format_currency, format_date_mm, info_box
-
 
 # ============================================================
 # 3. AUTHENTICATION SETUP
@@ -41,21 +37,14 @@ from core.utils import format_currency, format_date_mm, info_box
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "auth_config.yaml")
 
-
 def get_auth_config() -> dict:
-    """
-    Auth config ကို ရယူခြင်း
-    - File ရှိရင် → load
-    - မရှိရင် → default config ဖန်တီးပြီး save
-    """
     if not os.path.exists(CONFIG_PATH):
-        # Default config — အဖေအတွက်
         default_config = {
             "credentials": {
                 "usernames": {
                     "admin": {
                         "name": "အုပ်ချုပ်သူ",
-                        "password": stauth.Hasher.hash("admin123"),  # ⚠️ နောက်မှ ပြောင်း
+                        "password": stauth.Hasher.hash("admin123"),
                         "email": "admin@example.com",
                     }
                 }
@@ -65,9 +54,6 @@ def get_auth_config() -> dict:
                 "key": "accounting_app_secret_key_2024",
                 "name": "accounting_app_cookie",
             },
-            "preauthorized": {
-                "emails": []
-            },
         }
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             yaml.dump(default_config, f, allow_unicode=True, default_flow_style=False)
@@ -76,9 +62,7 @@ def get_auth_config() -> dict:
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
         return yaml.load(f, Loader=SafeLoader)
 
-
 def setup_authenticator(config: dict):
-    """Authenticator object ဖန်တီးခြင်း"""
     return stauth.Authenticate(
         config["credentials"],
         config["cookie"]["name"],
@@ -87,15 +71,12 @@ def setup_authenticator(config: dict):
         auto_hash=True,
     )
 
-
 # ============================================================
-# 4. SIDEBAR — Logout + Navigation
+# 4. SIDEBAR
 # ============================================================
 
 def render_sidebar(authenticator):
-    """Sidebar — logo, user info, logout"""
     with st.sidebar:
-        # App title
         st.markdown(
             """
             <div style="text-align: center; padding: 1rem 0;">
@@ -113,7 +94,6 @@ def render_sidebar(authenticator):
         
         st.divider()
 
-        # Language Toggle
         st.markdown("**🌐 ဘာသာစကား / Language**")
         lang = st.radio(
             "ရွေးချယ်ပါ",
@@ -126,17 +106,10 @@ def render_sidebar(authenticator):
             st.session_state.language = lang
             st.rerun()
         
-        # User info
         user_name = st.session_state.get("name", "User")
         st.markdown(
             f"""
-            <div style="
-                background-color: #e3f2fd;
-                padding: 0.8rem;
-                border-radius: 8px;
-                border-left: 4px solid #1565c0;
-                margin-bottom: 1rem;
-            ">
+            <div style="background-color: #e3f2fd; padding: 0.8rem; border-radius: 8px; border-left: 4px solid #1565c0; margin-bottom: 1rem;">
                 <p style="margin: 0; font-size: 0.9rem; color: #666;">အသုံးပြုသူ</p>
                 <p style="margin: 0.2rem 0 0 0; font-weight: bold; color: #1565c0;">
                     👤 {user_name}
@@ -146,15 +119,9 @@ def render_sidebar(authenticator):
             unsafe_allow_html=True,
         )
         
-        # Logout button
-        authenticator.logout(
-            button_name="🚪 ထွက်ရန် (Logout)",
-            location="sidebar",
-        )
+        authenticator.logout(button_name="🚪 ထွက်ရန် (Logout)", location="sidebar")
         
         st.divider()
-        
-        # Footer
         st.markdown(
             """
             <div style="text-align: center; color: #999; font-size: 0.8rem; padding-top: 1rem;">
@@ -165,15 +132,11 @@ def render_sidebar(authenticator):
             unsafe_allow_html=True,
         )
 
-
 # ============================================================
-# 5. HOME PAGE — Dashboard
+# 5. HOME PAGE
 # ============================================================
 
 def render_home():
-    """Home Dashboard — client list + stats"""
-    
-    # ---------- Header ----------
     st.markdown(
         f"""
         <div style="padding: 0.5rem 0 1.5rem 0;">
@@ -188,7 +151,6 @@ def render_home():
         unsafe_allow_html=True,
     )
     
-    # ---------- Stats Cards ----------
     try:
         stats = db.get_dashboard_stats()
     except Exception as e:
@@ -234,8 +196,6 @@ def render_home():
         )
     
     st.markdown("<br>", unsafe_allow_html=True)
-    
-    # ---------- Quick Actions ----------
     st.markdown(f'<h2 style="color: #1f4788; font-size: 1.6rem; margin-top: 1rem;">{t("quick_actions")}</h2>', unsafe_allow_html=True)
     
     col1, col2, col3, col4 = st.columns(4)
@@ -257,8 +217,6 @@ def render_home():
             st.switch_page("pages/5_Balance_Sheet.py")
     
     st.markdown("<br>", unsafe_allow_html=True)
-    
-    # ---------- Recent Clients ----------
     st.markdown(f'<h2 style="color: #1f4788; font-size: 1.6rem; margin-top: 1rem;">{t("recent_clients")}</h2>', unsafe_allow_html=True)
     
     try:
@@ -287,7 +245,6 @@ def render_home():
                         st.switch_page("pages/2_Client_Detail.py")
                 st.divider()
     
-    # ---------- Help Section ----------
     st.markdown("<br>", unsafe_allow_html=True)
     with st.expander(t('help')):
         st.markdown(
@@ -300,22 +257,17 @@ def render_home():
             """
         )
 
-
 # ============================================================
-# 6. MAIN — Entry Point
+# 6. MAIN
 # ============================================================
 
 def main():
-    """Main application entry point"""
-    
-    # ---------- Init Database ----------
     try:
         db.init_db()
     except Exception as e:
         st.error(f"Database initialize failed: {e}")
         st.stop()
     
-    # ---------- Auth Config ----------
     config = get_auth_config()
     authenticator = setup_authenticator(config)
     
@@ -353,28 +305,10 @@ def main():
         st.stop()
     
     # ---------- Authenticated ----------
-    if "name" in st.session_state and st.session_state["name"]:
-        pass 
-    
-    # Sidebar ဖန်တီး
-    render_sidebar(authenticator)
-    
-    # Home Dashboard
-    render_home()
 
-# ============================================================
-# 7. RUN
-# ============================================================
+
+    render_sidebar(authenticator)
+    render_home()
 
 if __name__ == "__main__":
     main()
-
-# app.py ထဲက main() ရဲ့ အောက်ဆုံးမှာ ထည့်ပါ
-try:
-    from core.db import supabase
-    supabase.auth.sign_in_with_password({
-        "email": "vassiliburma@gmail.com", # သင့် Supabase မှာ ဖန်တီးထားတဲ့ Email
-        "password": "PonPyay2081981!@#"     # သင့် Supabase မှာ ဖန်တီးထားတဲ့ Password
-    })
-except Exception as e:
-    st.warning(f"Database Auth Error: {e}")

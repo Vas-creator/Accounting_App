@@ -1,7 +1,7 @@
 # pages/3_Manufacturing.py
 """
 Manufacturing Account — ကုန်ထုတ်လုပ်မှု စာရင်း
-Real-time calculation + Save to DB + PDF Export
+Real-time calculation + Save to DB + PDF Export + History
 """
 
 import streamlit as st
@@ -54,39 +54,6 @@ if not client:
     st.stop()
 
 # ============================================================
-# LOAD EXISTING DATA
-# ============================================================
-
-existing = None
-saved_data = {}
-saved_period = ""
-db_custom_data = {
-    "direct_materials": [], 
-    "direct_labour": [], 
-    "direct_expenses": [], 
-    "factory_overhead": []
-}
-
-try:
-    existing = db.get_statement(client_id, "manufacturing")
-    if existing and existing.get("data"):
-        raw_data = existing["data"]
-        if isinstance(raw_data, str):
-            saved_data = json.loads(raw_data)
-        elif isinstance(raw_data, dict):
-            saved_data = raw_data
-        saved_period = existing.get("period_end", "")
-        
-        raw_custom = existing.get("custom_data")
-        if raw_custom:
-            if isinstance(raw_custom, str):
-                db_custom_data = json.loads(raw_custom)
-            elif isinstance(raw_custom, dict):
-                db_custom_data = raw_custom
-except Exception:
-    pass
-
-# ============================================================
 # SESSION STATE (ဖောက်သည်ပြောင်းရင် ရှင်းမယ်)
 # ============================================================
 
@@ -103,33 +70,18 @@ if st.session_state.get("current_mfg_client_id") != client_id:
             if k != "mfg_period_input":
                 del st.session_state[k]
 
-if "mfg_data" not in st.session_state:
-    st.session_state.mfg_data = dict(saved_data)
+# ============================================================
+# HISTORY: ကာလအလိုက် စာရင်းဟောင်းများ ရယူခြင်း
+# ============================================================
 
-if "mfg_custom_data" not in st.session_state:
-    st.session_state.mfg_custom_data = db_custom_data
+history = []
+try:
+    history = db.get_statement_history(client_id, "manufacturing")
+except Exception:
+    history = []
 
-if "mfg_period" not in st.session_state:
-    st.session_state.mfg_period = saved_period or str(date.today())
-
-# Show/Hide State များ
-if "mfg_show_dm" not in st.session_state:
-    st.session_state.mfg_show_dm = {
-        "opening_stock_raw": True, "purchases_raw": True, 
-        "carriage_inward": True, "customs_duty": True, "closing_stock_raw": True
-    }
-if "mfg_show_dl" not in st.session_state:
-    st.session_state.mfg_show_dl = {"wages_direct": True, "wages_overtime": True, "wages_contract": True}
-if "mfg_show_de" not in st.session_state:
-    st.session_state.mfg_show_de = {"royalty": True, "hire_plant": True, "fuel_power_direct": True}
-if "mfg_show_fo" not in st.session_state:
-    st.session_state.mfg_show_fo = {
-        "factory_rent": True, "factory_rates": True, "factory_insurance": True,
-        "factory_power": True, "factory_salary": True, "depreciation_plant": True,
-        "repairs_plant": True, "indirect_wages": True, "factory_misc": True
-    }
-if "mfg_show_wip" not in st.session_state:
-    st.session_state.mfg_show_wip = {"add_opening_wip": True, "less_closing_wip": True}
+history_periods = [h["period_end"] for h in history if h.get("period_end")]
+history_periods = sorted(list(set(history_periods)), reverse=True)
 
 # ============================================================
 # SIDEBAR
@@ -188,24 +140,110 @@ st.markdown(
 )
 
 # ============================================================
-# PERIOD END
+# PERIOD & HISTORY
 # ============================================================
 
-col1, col2 = st.columns([1, 3])
-with col1:
+col_date, col_hist = st.columns([1, 1])
+
+with col_date:
+    if "mfg_period" not in st.session_state:
+        st.session_state.mfg_period = str(date.today())
+
     try:
         initial_date = date.fromisoformat(st.session_state.mfg_period)
     except Exception:
         initial_date = date.today()
 
     period_end = st.date_input(
-        f"📅 {t('period_end')}",
+        f"📅 {t('period_end')} (New/Update)",
         value=initial_date,
         key="mfg_period_input",
     )
     st.session_state.mfg_period = str(period_end)
 
-st.markdown("<br>", unsafe_allow_html=True)
+with col_hist:
+    if history_periods:
+        st.markdown("**📜 သိမ်းထားသော ကာလများ (History)**")
+        options = ["-- ကာလအသစ် (New) --"] + history_periods
+        selected_history = st.selectbox("ကာလဟောင်း ပြန်ကြည့်ရန်", options=options, label_visibility="collapsed")
+
+        if selected_history != "-- ကာလအသစ် (New) --":
+            if st.session_state.get("selected_mfg_history") != selected_history:
+                st.session_state.selected_mfg_history = selected_history
+
+                existing_hist = db.get_statement(client_id, "manufacturing", period_end=selected_history)
+                if existing_hist:
+                    raw_data = existing_hist.get("data")
+                    if isinstance(raw_data, str):
+                        st.session_state.mfg_data = json.loads(raw_data)
+                    else:
+                        st.session_state.mfg_data = raw_data or {}
+
+                    raw_custom = existing_hist.get("custom_data")
+                    if isinstance(raw_custom, str):
+                        st.session_state.mfg_custom_data = json.loads(raw_custom)
+                    else:
+                        st.session_state.mfg_custom_data = raw_custom or {
+                            "direct_materials": [], 
+                            "direct_labour": [], 
+                            "direct_expenses": [], 
+                            "factory_overhead": []
+                        }
+
+                    st.session_state.mfg_period = selected_history
+                    st.rerun()
+    else:
+        st.info("သိမ်းထားသော စာရင်း မရှိသေးပါ။")
+
+# ============================================================
+# LOAD EXISTING (If New period)
+# ============================================================
+
+if "mfg_data" not in st.session_state:
+    existing = db.get_statement(client_id, "manufacturing")
+    if existing and existing.get("data"):
+        raw_data = existing.get("data")
+        if isinstance(raw_data, str):
+            st.session_state.mfg_data = json.loads(raw_data)
+        else:
+            st.session_state.mfg_data = raw_data
+    else:
+        st.session_state.mfg_data = {}
+
+if "mfg_custom_data" not in st.session_state:
+    existing = db.get_statement(client_id, "manufacturing")
+    if existing and existing.get("custom_data"):
+        raw_custom = existing.get("custom_data")
+        if isinstance(raw_custom, str):
+            st.session_state.mfg_custom_data = json.loads(raw_custom)
+        else:
+            st.session_state.mfg_custom_data = raw_custom
+    else:
+        st.session_state.mfg_custom_data = {
+            "direct_materials": [], 
+            "direct_labour": [], 
+            "direct_expenses": [], 
+            "factory_overhead": []
+        }
+
+# Show/Hide State များ
+if "mfg_show_dm" not in st.session_state:
+    st.session_state.mfg_show_dm = {
+        "opening_stock_raw": True, "purchases_raw": True, 
+        "carriage_inward": True, "customs_duty": True, "closing_stock_raw": True
+    }
+if "mfg_show_dl" not in st.session_state:
+    st.session_state.mfg_show_dl = {"wages_direct": True, "wages_overtime": True, "wages_contract": True}
+if "mfg_show_de" not in st.session_state:
+    st.session_state.mfg_show_de = {"royalty": True, "hire_plant": True, "fuel_power_direct": True}
+if "mfg_show_fo" not in st.session_state:
+    st.session_state.mfg_show_fo = {
+        "factory_rent": True, "factory_rates": True, "factory_insurance": True,
+        "factory_power": True, "factory_salary": True, "depreciation_plant": True,
+        "repairs_plant": True, "indirect_wages": True, "factory_misc": True
+    }
+if "mfg_show_wip" not in st.session_state:
+    st.session_state.mfg_show_wip = {"add_opening_wip": True, "less_closing_wip": True}
 
 # ============================================================
 # HELPER FUNCTIONS
@@ -223,7 +261,6 @@ def mfg_num_input(label: str, key: str, is_deduction: bool = False, state_key: s
     
     with col_input:
         if show:
-            # ⭐ int အဖြစ်ပြောင်းပြီး format="%d" သုံးမယ် (ဒသမတွေမပါအောင်)
             result = st.number_input(
                 f"{prefix}{label}", value=int(value) if value else 0,
                 min_value=0, step=1000, format="%d", key=f"mfg_input_{key}",
@@ -243,7 +280,6 @@ def render_mfg_custom_items(section_key: str, title: str):
         with col_x:
             item["label"] = st.text_input("Name", value=item.get("label", ""), key=f"mfg_{section_key}_label_{i}", label_visibility="collapsed")
         with col_y:
-            # ⭐ Custom item တွေမှာလည်း int နဲ့ %d ပြောင်းမယ်
             item["value"] = st.number_input(
                 "Amount", value=int(item.get("value", 0)), 
                 step=1000, format="%d", key=f"mfg_{section_key}_value_{i}", 
@@ -284,7 +320,6 @@ col1, col2 = st.columns(2)
 # ============================================================
 
 with col1:
-    # 1. Direct Materials
     st.markdown(f'<h3 style="color: #1976d2; font-size: 1.15rem; border-bottom: 2px solid #4facfe; padding-bottom: 0.3rem;">{"၁။ တိုက်ရိုက် ကုန်ကြမ်းများ" if st.session_state.get("language") == "my" else "1. Direct Materials"}</h3>', unsafe_allow_html=True)
     dm_opening = mfg_num_input("အဖွင့် ကုန်ကြမ်းလက်ကျန်", "opening_stock_raw", state_key="mfg_show_dm")
     dm_purchases = mfg_num_input("ကုန်ကြမ်းဝယ်ယူမှု", "purchases_raw", state_key="mfg_show_dm")
@@ -297,7 +332,6 @@ with col1:
     subtotal_box("အသုံးပြုသော ကုန်ကြမ်းကုန်ကျစရိတ်", total_dm, "#1976d2")
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # 2. Direct Labour
     st.markdown(f'<h3 style="color: #1976d2; font-size: 1.15rem; border-bottom: 2px solid #4facfe; padding-bottom: 0.3rem;">{"၂။ တိုက်ရိုက် အလုပ်သမားခ" if st.session_state.get("language") == "my" else "2. Direct Labour"}</h3>', unsafe_allow_html=True)
     dl_wages = mfg_num_input("တိုက်ရိုက် အလုပ်သမားခ", "wages_direct", state_key="mfg_show_dl")
     dl_ot = mfg_num_input("အချိန်ပို အလုပ်သမားခ", "wages_overtime", state_key="mfg_show_dl")
@@ -308,7 +342,6 @@ with col1:
     subtotal_box("တိုက်ရိုက် အလုပ်သမားခ စုစုပေါင်း", total_dl, "#1976d2")
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # 3. Direct Expenses
     st.markdown(f'<h3 style="color: #1976d2; font-size: 1.15rem; border-bottom: 2px solid #4facfe; padding-bottom: 0.3rem;">{"၃။ တိုက်ရိုက် အသုံးစရိတ်များ" if st.session_state.get("language") == "my" else "3. Direct Expenses"}</h3>', unsafe_allow_html=True)
     de_royalty = mfg_num_input("မူပိုင်ခွင့်ကြေး", "royalty", state_key="mfg_show_de")
     de_hire = mfg_num_input("စက်ပစ္စည်း ငှားရမ်းခ", "hire_plant", state_key="mfg_show_de")
@@ -319,7 +352,6 @@ with col1:
     subtotal_box("တိုက်ရိုက် အသုံးစရိတ် စုစုပေါင်း", total_de, "#1976d2")
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Prime Cost
     prime_cost = total_dm + total_dl + total_de
     st.markdown(f"""
         <div style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); padding: 1.2rem; border-radius: 12px; color: white; margin-top: 1rem;">
@@ -333,7 +365,6 @@ with col1:
 # ============================================================
 
 with col2:
-    # 4. Factory Overhead
     st.markdown(f'<h3 style="color: #c2185b; font-size: 1.15rem; border-bottom: 2px solid #f093fb; padding-bottom: 0.3rem;">{"၄။ စက်ရုံ အသုံးစရိတ်များ" if st.session_state.get("language") == "my" else "4. Factory Overhead"}</h3>', unsafe_allow_html=True)
     fo_rent = mfg_num_input("စက်ရုံ ငှားရမ်းခ", "factory_rent", state_key="mfg_show_fo")
     fo_rates = mfg_num_input("စက်ရုံ အခွန်", "factory_rates", state_key="mfg_show_fo")
@@ -350,7 +381,6 @@ with col2:
     subtotal_box("စက်ရုံ အသုံးစရိတ် စုစုပေါင်း", total_fo, "#c2185b")
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # 5. WIP
     st.markdown(f'<h3 style="color: #c2185b; font-size: 1.15rem; border-bottom: 2px solid #f093fb; padding-bottom: 0.3rem;">{"၅။ လုပ်ငန်း ဆောင်ရွက်ဆဲ (WIP)" if st.session_state.get("language") == "my" else "5. Work in Progress"}</h3>', unsafe_allow_html=True)
     wip_opening = mfg_num_input("အဖွင့် WIP", "add_opening_wip", state_key="mfg_show_wip")
     wip_closing = mfg_num_input("အပိတ် WIP", "less_closing_wip", is_deduction=True, state_key="mfg_show_wip")
@@ -358,7 +388,6 @@ with col2:
     subtotal_box("WIP ပြောင်းလဲမှု", wip_opening - wip_closing, "#c2185b")
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Production Cost
     production_cost = prime_cost + total_fo + wip_opening - wip_closing
     st.markdown(f"""
         <div style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); padding: 1.5rem; border-radius: 12px; color: white; margin-top: 1rem;">
@@ -367,7 +396,6 @@ with col2:
         </div>
         """, unsafe_allow_html=True)
 
-    # နောက်စာမျက်နှာတွေအတွက် သိမ်းထားမယ်
     st.session_state.mfg_data["_production_cost"] = production_cost
     st.session_state.mfg_data["_total_dm"] = total_dm
     st.session_state.mfg_data["_total_dl"] = total_dl
@@ -444,5 +472,3 @@ with col4:
 st.divider()
 st.caption(f"📅 {t('period_end')}: {format_date_mm(st.session_state.mfg_period)}")
 st.caption(f"👤 {t('clients')}: {client['name']}")
-if existing and existing.get('updated_at'):
-    st.caption(f"🔄 {t('updated')}: {format_date_mm(existing.get('updated_at', ''))}")

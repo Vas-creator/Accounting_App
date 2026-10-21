@@ -43,71 +43,11 @@ if not client:
     st.stop()
 
 # ============================================================
-# LOAD EXISTING (DATABASE မှ Data ဆွဲယူခြင်း) + DEBUG
+# SESSION STATE (ဖောက်သည်ပြောင်းရင် ရှင်းမယ်)
 # ============================================================
 
-existing = None
-saved_data = {}
-saved_period = ""
-db_custom_data = {"revenue": [], "cos": [], "expenses": []}
-
-try:
-    existing = db.get_statement(client_id, "trading_pl")
-    
-    if existing:
-        raw_data = existing.get("data")
-        if raw_data:
-            if isinstance(raw_data, str):
-                try:
-                    saved_data = json.loads(raw_data)
-                except:
-                    saved_data = {}
-            elif isinstance(raw_data, dict):
-                saved_data = raw_data
-            else:
-                saved_data = {}
-
-        saved_period = existing.get("period_end", "")
-
-        raw_custom = existing.get("custom_data")
-        if raw_custom:
-            if isinstance(raw_custom, str):
-                try:
-                    db_custom_data = json.loads(raw_custom)
-                except:
-                    db_custom_data = {"revenue": [], "cos": [], "expenses": []}
-            elif isinstance(raw_custom, dict):
-                db_custom_data = raw_custom
-
-except Exception as e:
-    st.error(f"⚠️ ဒေတာဖတ်ရာတွင် အမှားအယွင်းရှိပါသည်: {e}")
-    existing = None
-    saved_data = {}
-    saved_period = ""
-
-# ============================================================
-# TRY TO PULL MANUFACTURING COST
-# ============================================================
-
-mfg_production_cost = 0.0
-try:
-    mfg_existing = db.get_statement(client_id, "manufacturing")
-    if mfg_existing and mfg_existing.get("data"):
-        raw_mfg = mfg_existing["data"]
-        if isinstance(raw_mfg, str):
-            mfg_data = json.loads(raw_mfg)
-        else:
-            mfg_data = raw_mfg
-        mfg_production_cost = float(mfg_data.get("_production_cost", 0.0))
-except Exception:
-    mfg_production_cost = 0.0
-
-# ============================================================
-# SESSION STATE (ဖောက်သည်အသစ်ရောက်ရင် ရှင်းထုတ်ရန်)
-# ============================================================
-
-if st.session_state.get("current_client_id") != client_id:
-    st.session_state.current_client_id = client_id
+if st.session_state.get("current_tpl_client_id") != client_id:
+    st.session_state.current_tpl_client_id = client_id
     for k in list(st.session_state.keys()):
         if k.startswith("show_") or k.startswith("tpl_") or k.startswith("custom_"):
             if k != "tpl_period_input":
@@ -119,23 +59,18 @@ if st.session_state.get("current_client_id") != client_id:
     if "tpl_period" in st.session_state:
         del st.session_state["tpl_period"]
 
-# Session State ဖြည့်မယ်
-if "tpl_data" not in st.session_state:
-    st.session_state.tpl_data = dict(saved_data)
+# ============================================================
+# HISTORY: ကာလအလိုက် စာရင်းဟောင်းများ ရယူခြင်း
+# ============================================================
 
-if "tpl_period" not in st.session_state:
-    st.session_state.tpl_period = saved_period or str(date.today())
+history = []
+try:
+    history = db.get_statement_history(client_id, "trading_pl")
+except Exception:
+    history = []
 
-if "custom_data" not in st.session_state:
-    st.session_state.custom_data = db_custom_data
-
-# Show/Hide State များ
-if "show_revenue" not in st.session_state:
-    st.session_state.show_revenue = {"cash_sales": True, "credit_sales": True, "sales_return": True}
-if "show_cos" not in st.session_state:
-    st.session_state.show_cos = {"opening_stock_finished": True, "purchases": True, "carriage_inward": True, "purchase_return": True, "closing_stock_finished": True}
-if "show_expenses" not in st.session_state:
-    st.session_state.show_expenses = {"staff_salary": True, "tax_other": True, "electricity": True, "telephone": True, "fuel": True, "repair_maintenance": True, "general_expenses": True, "dep_building": True, "dep_machine": True, "dep_furniture": True, "dep_vehicle": True}
+history_periods = [h["period_end"] for h in history if h.get("period_end")]
+history_periods = sorted(list(set(history_periods)), reverse=True) # အသစ်ဆုံးကို အပေါ်မှာ ပြမယ်
 
 # ============================================================
 # SIDEBAR
@@ -185,20 +120,108 @@ st.markdown(
 )
 
 # ============================================================
-# PERIOD
+# PERIOD & HISTORY SELECTION
 # ============================================================
 
-col1, col2 = st.columns([1, 3])
-with col1:
+col_date, col_hist = st.columns([1, 1])
+
+with col_date:
+    # 1. ကာလအသစ် ရွေးချယ်ခြင်း
+    if "tpl_period" not in st.session_state:
+        st.session_state.tpl_period = str(date.today())
+    
     try:
         initial_date = date.fromisoformat(st.session_state.tpl_period)
     except Exception:
         initial_date = date.today()
-    period_end = st.date_input(f"📅 {t('period_end')}", value=initial_date, key="tpl_period_input")
+        
+    period_end = st.date_input(f"📅 {t('period_end')} (New/Update)", value=initial_date, key="tpl_period_input")
     st.session_state.tpl_period = str(period_end)
 
+with col_hist:
+    # 2. စာရင်းဟောင်း ရွေးချယ်ခြင်း (History)
+    if history_periods:
+        st.markdown("**📜 သိမ်းထားသော ကာလများ (History)**")
+        options = ["-- ကာလအသစ် (New) --"] + history_periods
+        selected_history = st.selectbox("ကာလဟောင်း ပြန်ကြည့်ရန်", options=options, label_visibility="collapsed")
+        
+        if selected_history != "-- ကာလအသစ် (New) --":
+            # ရွေးလိုက်တဲ့ ကာလအတွက် Data ကို ဆွဲထုတ်မယ်
+            if st.session_state.get("selected_history_period") != selected_history:
+                st.session_state.selected_history_period = selected_history
+                
+                existing_hist = db.get_statement(client_id, "trading_pl", period_end=selected_history)
+                if existing_hist:
+                    raw_data = existing_hist.get("data")
+                    if isinstance(raw_data, str):
+                        st.session_state.tpl_data = json.loads(raw_data)
+                    else:
+                        st.session_state.tpl_data = raw_data or {}
+                    
+                    raw_custom = existing_hist.get("custom_data")
+                    if isinstance(raw_custom, str):
+                        st.session_state.custom_data = json.loads(raw_custom)
+                    else:
+                        st.session_state.custom_data = raw_custom or {"revenue": [], "cos": [], "expenses": []}
+                    
+                    st.session_state.tpl_period = selected_history
+                    st.rerun()
+    else:
+        st.info("သိမ်းထားသော စာရင်း မရှိသေးပါ။")
+
 # ============================================================
-# HELPER
+# LOAD EXISTING (If New period)
+# ============================================================
+
+if "tpl_data" not in st.session_state:
+    existing = db.get_statement(client_id, "trading_pl")
+    if existing and existing.get("data"):
+        raw_data = existing.get("data")
+        if isinstance(raw_data, str):
+            st.session_state.tpl_data = json.loads(raw_data)
+        else:
+            st.session_state.tpl_data = raw_data
+    else:
+        st.session_state.tpl_data = {}
+
+if "custom_data" not in st.session_state:
+    existing = db.get_statement(client_id, "trading_pl")
+    if existing and existing.get("custom_data"):
+        raw_custom = existing.get("custom_data")
+        if isinstance(raw_custom, str):
+            st.session_state.custom_data = json.loads(raw_custom)
+        else:
+            st.session_state.custom_data = raw_custom
+    else:
+        st.session_state.custom_data = {"revenue": [], "cos": [], "expenses": []}
+
+# Show/Hide State များ
+if "show_revenue" not in st.session_state:
+    st.session_state.show_revenue = {"cash_sales": True, "credit_sales": True, "sales_return": True}
+if "show_cos" not in st.session_state:
+    st.session_state.show_cos = {"opening_stock_finished": True, "purchases": True, "carriage_inward": True, "purchase_return": True, "closing_stock_finished": True}
+if "show_expenses" not in st.session_state:
+    st.session_state.show_expenses = {"staff_salary": True, "tax_other": True, "electricity": True, "telephone": True, "fuel": True, "repair_maintenance": True, "general_expenses": True, "dep_building": True, "dep_machine": True, "dep_furniture": True, "dep_vehicle": True}
+
+# ============================================================
+# TRY TO PULL MANUFACTURING COST
+# ============================================================
+
+mfg_production_cost = 0.0
+try:
+    mfg_existing = db.get_statement(client_id, "manufacturing", period_end=st.session_state.tpl_period)
+    if mfg_existing and mfg_existing.get("data"):
+        raw_mfg = mfg_existing["data"]
+        if isinstance(raw_mfg, str):
+            mfg_data = json.loads(raw_mfg)
+        else:
+            mfg_data = raw_mfg
+        mfg_production_cost = float(mfg_data.get("_production_cost", 0.0))
+except Exception:
+    mfg_production_cost = 0.0
+
+# ============================================================
+# HELPER FUNCTIONS
 # ============================================================
 
 def num_input(label: str, key: str, is_deduction: bool = False, state_key: str = None) -> float:
@@ -213,7 +236,6 @@ def num_input(label: str, key: str, is_deduction: bool = False, state_key: str =
     
     with col_input:
         if show:
-            # ⭐ int နဲ့ %d ကို သုံးမယ် (ဒသမ မပါအောင်)
             result = st.number_input(
                 f"{prefix}{label}", value=int(value) if value else 0,
                 min_value=0, step=1000, format="%d", key=f"tpl_{key}",
@@ -243,7 +265,6 @@ def render_custom_items(section_key: str, title: str):
         with col_x:
             item["label"] = st.text_input("Name", value=item.get("label", ""), key=f"{section_key}_label_{i}", label_visibility="collapsed")
         with col_y:
-            # ⭐ Custom item တွေမှာလည်း int နဲ့ %d ပြောင်းမယ်
             item["value"] = st.number_input(
                 "Amount", value=int(item.get("value", 0)), 
                 step=1000, format="%d", key=f"{section_key}_value_{i}", 
@@ -277,7 +298,6 @@ col1, col2, col3 = st.columns(3)
 # ============================================================
 
 with col1:
-    # --- Revenue ---
     st.markdown(
         f"""<h3 style="color: #1976d2; font-size: 1.15rem; border-bottom: 2px solid #4facfe; padding-bottom: 0.3rem;">
             {'၁။ အရောင်းများ (Revenue)' if st.session_state.get('language', 'my') == 'my' else '1. Revenue'}
@@ -295,7 +315,6 @@ with col1:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # --- Cost of Sales ---
     st.markdown(
         f"""<h3 style="color: #1976d2; font-size: 1.15rem; border-bottom: 2px solid #4facfe; padding-bottom: 0.3rem;">
             {'၂။ ရောင်းကုန် ကုန်ကျစရိတ် (Cost of Sales)' if st.session_state.get('language', 'my') == 'my' else '2. Cost of Sales'}
@@ -303,7 +322,6 @@ with col1:
         unsafe_allow_html=True,
     )
 
-    # ⭐ Manufacturing Cost ကိုလည်း int နဲ့ ပြောင်းမယ်
     mfg_cost_input = st.number_input(
         "🏭 ကုန်ထုတ်လုပ်မှု ကုန်ကျစရိတ် (Manufacturing မှ)",
         value=int(st.session_state.tpl_data.get("manufacturing_cost", mfg_production_cost)),
@@ -485,5 +503,3 @@ with col4:
 st.divider()
 st.caption(f"📅 {t('period_end')}: {format_date_mm(st.session_state.tpl_period)}")
 st.caption(f"👤 {t('clients')}: {client['name']}")
-if existing and existing.get("updated_at"):
-    st.caption(f"🔄 {t('updated')}: {format_date_mm(existing.get('updated_at', ''))}")
