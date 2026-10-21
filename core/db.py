@@ -31,21 +31,36 @@ def init_db():
 # ============================================================
 
 def get_dashboard_stats() -> dict:
-    """Dashboard အတွက် stats ရယူခြင်း"""
+    """Dashboard အတွက် stats ရယူခြင်း (ဖောက်သည်တစ်ယောက်ချင်းစီရဲ့ စာရင်းအရေအတွက်)"""
     try:
         conn = get_supabase()
         
+        # Total clients
         res = conn.table("clients").select("id", count="exact").execute()
         total_clients = res.count if res.count else 0
         
+        # ဖောက်သည်တိုင်းအတွက် စာရင်း ၄ မျိုးထဲက ရှိတဲ့အရေအတွက်ကို ပေါင်းမယ်
         total_statements = 0
-        for table in ["manufacturing", "trading_pl", "balance_sheet", "cash_flow"]:
-            try:
-                res = conn.table(table).select("id", count="exact").execute()
-                total_statements += res.count if res.count else 0
-            except Exception:
-                pass
+        try:
+            # clients အားလုံးကို ယူမယ်
+            clients_res = conn.table("clients").select("id").execute()
+            clients = clients_res.data or []
+            
+            for client in clients:
+                cid = client["id"]
+                # ဒီဖောက်သည်အတွက် ဘယ် Table တွေမှာ Data ရှိလဲ စစ်မယ်
+                for table in ["manufacturing", "trading_pl", "balance_sheet", "cash_flow"]:
+                    try:
+                        # ဒီဖောက်သည်ရဲ့ Data ရှိမရှိ စစ်မယ်
+                        check_res = conn.table(table).select("id").eq("client_id", cid).limit(1).execute()
+                        if check_res.data:
+                            total_statements += 1 # ရှိရင် ၁ ခု ပေါင်းမယ်
+                    except Exception:
+                        pass
+        except Exception as e:
+            print(f"Statement count error: {e}")
         
+        # Latest update
         try:
             res = conn.table("clients").select("created_at").order("created_at", desc=True).limit(1).execute()
             if res.data:
@@ -64,8 +79,7 @@ def get_dashboard_stats() -> dict:
     except Exception as e:
         print(f"Dashboard stats error: {e}")
         return {"total_clients": 0, "total_statements": 0, "latest_update": "—"}
-
-
+    
 def get_recent_clients(limit: int = 5) -> list:
     """မကြာသေးမီ ဖောက်သည်များ ရယူခြင်း"""
     try:
