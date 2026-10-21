@@ -50,8 +50,29 @@ if not client:
     st.stop()
 
 # ============================================================
+# HELPER FUNCTION FOR SAFE JSON
+# ============================================================
+
+def safe_json_loads(data):
+    """String ဖြစ်ရင် ဖြည်မယ်၊ Dict ဖြစ်ရင် ဒီအတိုင်းယူမယ်"""
+    if isinstance(data, str):
+        try:
+            return json.loads(data)
+        except:
+            return {}
+    elif isinstance(data, dict):
+        return data
+    return {}
+
+# ============================================================
 # LOAD ALL STATEMENTS
 # ============================================================
+
+# ⭐ ဖောက်သည်ပြောင်းသွားရင် ဒေတာဟောင်းတွေ မလာအောင် ရှင်းမယ်
+if st.session_state.get("current_export_client_id") != client_id:
+    st.session_state.current_export_client_id = client_id
+    if "show_individual" in st.session_state:
+        del st.session_state["show_individual"]
 
 statements = {
     "manufacturing": {"icon": "🏭", "data": None, "period": "", "label_my": "ကုန်ထုတ်လုပ်မှု စာရင်း", "label_en": "Manufacturing Account"},
@@ -64,7 +85,8 @@ for key in statements.keys():
     try:
         existing = db.get_statement(client_id, key)
         if existing and existing.get("data"):
-            statements[key]["data"] = json.loads(existing["data"])
+            # ⭐ Error မတက်အောင် safe_json_loads ကို သုံးမယ်
+            statements[key]["data"] = safe_json_loads(existing["data"])
             statements[key]["period"] = existing.get("period_end", "") or existing.get("as_at_date", "")
     except Exception as e:
         st.warning(f"⚠️ {key}: {e}")
@@ -97,12 +119,7 @@ with st.sidebar:
 
     st.markdown(
         f"""
-        <div style="
-            background-color: #e3f2fd;
-            padding: 0.8rem;
-            border-radius: 8px;
-            border-left: 4px solid #1565c0;
-        ">
+        <div style="background-color: #e3f2fd; padding: 0.8rem; border-radius: 8px; border-left: 4px solid #1565c0;">
             <p style="margin: 0; font-size: 0.85rem; color: #666;">{'ဖောက်သည်' if st.session_state.get('language', 'my') == 'my' else 'Client'}</p>
             <p style="margin: 0.2rem 0 0 0; font-weight: bold; color: #1565c0;">
                 👤 {client['name']}
@@ -118,13 +135,7 @@ with st.sidebar:
 
 st.markdown(
     f"""
-    <div style="
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 1.5rem;
-        border-radius: 12px;
-        color: white;
-        margin-bottom: 1.5rem;
-    ">
+    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1.5rem; border-radius: 12px; color: white; margin-bottom: 1.5rem;">
         <h1 style="margin: 0; font-size: 1.8rem;">
             📄 {'PDF ထုတ်ယူခြင်း' if st.session_state.get('language', 'my') == 'my' else 'Export PDF'}
         </h1>
@@ -167,21 +178,12 @@ for idx, (key, stmt) in enumerate(statements.items()):
 
         st.markdown(
             f"""
-            <div style="
-                background-color: {'#e8f5e9' if has_data else '#f5f5f5'};
-                border: 2px solid {border_color};
-                border-radius: 12px;
-                padding: 1rem;
-                text-align: center;
-                margin-bottom: 0.5rem;
-                min-height: 180px;
-            ">
+            <div style="background-color: {'#e8f5e9' if has_data else '#f5f5f5'}; border: 2px solid {border_color}; border-radius: 12px; padding: 1rem; text-align: center; margin-bottom: 0.5rem; min-height: 180px;">
                 <p style="font-size: 2rem; margin: 0;">{stmt['icon']}</p>
                 <h4 style="margin: 0.5rem 0 0.3rem 0; color: #1f4788; font-size: 1rem;">
                     {title}
                 </h4>
-                <p style="margin: 0.5rem 0 0 0; color: {status_color}; 
-                          font-weight: bold; font-size: 0.9rem;">
+                <p style="margin: 0.5rem 0 0 0; color: {status_color}; font-weight: bold; font-size: 0.9rem;">
                     {status_icon} {status_text}
                 </p>
             </div>
@@ -435,13 +437,7 @@ if summary_data:
     for label, value in summary_data:
         st.markdown(
             f"""
-            <div style="
-                background-color: #f5f5f5;
-                padding: 0.8rem 1rem;
-                border-radius: 8px;
-                border-left: 4px solid #1565c0;
-                margin-bottom: 0.5rem;
-            ">
+            <div style="background-color: #f5f5f5; padding: 0.8rem 1rem; border-radius: 8px; border-left: 4px solid #1565c0; margin-bottom: 0.5rem;">
                 <span style="font-weight: bold; color: #1f4788;">{label}</span>
                 <span style="float: right; color: #666;">{value}</span>
             </div>

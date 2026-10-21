@@ -1,7 +1,9 @@
 # core/pdf_generator.py
 import os
+import json
 from datetime import date, datetime
 from typing import Dict, Any, List, Optional
+
 from weasyprint import HTML, CSS
 
 from core.utils import (
@@ -24,7 +26,7 @@ PDF_TRANSLATIONS = {
         "trading_pl_title": "အရောင်းအဝယ် အမြတ်အစွန်း စာရင်း (Trading & P&L)",
         "balance_sheet_title": "ငွေစာရင်း လက်ကျန်စာရင်း (Balance Sheet)",
         "cash_flow_title": "ငွေသား စီးဆင်းမှု ရှင်းတမ်း (Cash Flow Statement)",
-        
+
         # Manufacturing
         "m1": "၁။ တိုက်ရိုက် ကုန်ကြမ်းများ",
         "opening_stock_raw": "အဖွင့် ကုန်ကြမ်းလက်ကျန်",
@@ -59,7 +61,7 @@ PDF_TRANSLATIONS = {
         "add_opening_wip": "အဖွင့် WIP",
         "less_closing_wip": "အပိတ် WIP",
         "production_cost": "ကုန်ထုတ်လုပ်မှု ကုန်ကျစရိတ် (Production Cost)",
-        
+
         # Trading
         "trading_acc_title": "က။ အရောင်းအဝယ် စာရင်း (Trading Account)",
         "cash_sales": "ငွေသား အရောင်း",
@@ -82,7 +84,7 @@ PDF_TRANSLATIONS = {
         "expenses": "အသုံးစရိတ်များ",
         "expenses_total": "အသုံးစရိတ် စုစုပေါင်း",
         "net_profit": "အသားတင် အမြတ် (Net Profit)",
-        
+
         # Balance Sheet
         "bs_assets_title": "ပိုင်ဆိုင်မှုများ (ASSETS)",
         "bs_ca_title": "၁။ လက်ရှိ ပိုင်ဆိုင်မှုများ",
@@ -115,7 +117,7 @@ PDF_TRANSLATIONS = {
         "liabilities_and_capital": "အကြွေးနှင့် အရင်း စုစုပေါင်း",
         "balanced_msg": "✓ ဟုန်းချင်း ကိုက်ညီပါသည် (Assets = Liabilities + Capital)",
         "not_balanced_msg": "✗ ကွာဟမှု: {} ကျပ်",
-        
+
         # Cash Flow
         "cf_op_title": "က။ လုပ်ငန်း လည်ပတ်မှု လုပ်ဆောင်ချက်များမှ ငွေသား",
         "cf_net_profit": "အခွန်မဆိုင်မီ အသားတင် အမြတ်/အရှုံး",
@@ -144,7 +146,7 @@ PDF_TRANSLATIONS = {
         "trading_pl_title": "Trading and Profit & Loss Account",
         "balance_sheet_title": "Balance Sheet",
         "cash_flow_title": "Cash Flow Statement",
-        
+
         # Manufacturing
         "m1": "1. Direct Materials",
         "opening_stock_raw": "Opening Stock (Raw)",
@@ -179,7 +181,7 @@ PDF_TRANSLATIONS = {
         "add_opening_wip": "Opening WIP",
         "less_closing_wip": "Closing WIP",
         "production_cost": "Production Cost",
-        
+
         # Trading
         "trading_acc_title": "A. Trading Account",
         "cash_sales": "Cash Sales",
@@ -202,7 +204,7 @@ PDF_TRANSLATIONS = {
         "expenses": "Expenses",
         "expenses_total": "Total Expenses",
         "net_profit": "Net Profit",
-        
+
         # Balance Sheet
         "bs_assets_title": "ASSETS",
         "bs_ca_title": "1. Current Assets",
@@ -235,7 +237,7 @@ PDF_TRANSLATIONS = {
         "liabilities_and_capital": "TOTAL LIABILITIES & CAPITAL",
         "balanced_msg": "✓ Balanced (Assets = Liabilities + Capital)",
         "not_balanced_msg": "✗ Difference: {} Kyats",
-        
+
         # Cash Flow
         "cf_op_title": "A. CASH FLOW FROM OPERATION ACTIVITIES",
         "cf_net_profit": "Net Profit before Taxation",
@@ -259,6 +261,7 @@ PDF_TRANSLATIONS = {
     }
 }
 
+
 def get_pdf_text(lang: str, key: str) -> str:
     return PDF_TRANSLATIONS.get(lang, PDF_TRANSLATIONS["my"]).get(key, key)
 
@@ -268,91 +271,204 @@ def get_pdf_text(lang: str, key: str) -> str:
 # ============================================================
 
 def calculate_manufacturing(data: Dict[str, Any]) -> Dict[str, Any]:
+    custom_data = data.get("custom_data", {})
     t = merge_template_with_data("manufacturing", data)
+
+    # 1. Direct Materials
     dm = t["direct_materials"]["items"]
-    cost_of_materials_used = (parse_number(dm["opening_stock_raw"]["value"]) + parse_number(dm["purchases_raw"]["value"]) + parse_number(dm["carriage_inward"]["value"]) + parse_number(dm["customs_duty"]["value"]) - parse_number(dm["closing_stock_raw"]["value"]))
+    cost_of_materials_used = (
+        parse_number(dm["opening_stock_raw"]["value"])
+        + parse_number(dm["purchases_raw"]["value"])
+        + parse_number(dm["carriage_inward"]["value"])
+        + parse_number(dm["customs_duty"]["value"])
+        - parse_number(dm["closing_stock_raw"]["value"])
+    )
+    # Custom DM ပေါင်း
+    for item in custom_data.get("direct_materials", []):
+        if item.get("value"):
+            cost_of_materials_used += parse_number(item["value"])
     t["direct_materials"]["cost_of_materials_used"] = cost_of_materials_used
-    
+
+    # 2. Direct Labour
     dl = t["direct_labour"]["items"]
-    direct_labour_total = (parse_number(dl["wages_direct"]["value"]) + parse_number(dl["wages_overtime"]["value"]) + parse_number(dl["wages_contract"]["value"]))
+    direct_labour_total = (
+        parse_number(dl["wages_direct"]["value"])
+        + parse_number(dl["wages_overtime"]["value"])
+        + parse_number(dl["wages_contract"]["value"])
+    )
+    # Custom DL ပေါင်း
+    for item in custom_data.get("direct_labour", []):
+        if item.get("value"):
+            direct_labour_total += parse_number(item["value"])
     t["direct_labour"]["direct_labour_total"] = direct_labour_total
-    
+
+    # 3. Direct Expenses
     de = t["direct_expenses"]["items"]
-    direct_expenses_total = (parse_number(de["royalty"]["value"]) + parse_number(de["hire_plant"]["value"]) + parse_number(de["fuel_power_direct"]["value"]))
+    direct_expenses_total = (
+        parse_number(de["royalty"]["value"])
+        + parse_number(de["hire_plant"]["value"])
+        + parse_number(de["fuel_power_direct"]["value"])
+    )
+    # Custom DE ပေါင်း
+    for item in custom_data.get("direct_expenses", []):
+        if item.get("value"):
+            direct_expenses_total += parse_number(item["value"])
     t["direct_expenses"]["direct_expenses_total"] = direct_expenses_total
-    
+
     prime_cost = cost_of_materials_used + direct_labour_total + direct_expenses_total
     t["prime_cost"]["value"] = prime_cost
-    
+
+    # 4. Factory Overhead
     fo = t["factory_overhead"]["items"]
     factory_overhead_total = sum(parse_number(item["value"]) for item in fo.values())
+    # Custom FO ပေါင်း
+    for item in custom_data.get("factory_overhead", []):
+        if item.get("value"):
+            factory_overhead_total += parse_number(item["value"])
     t["factory_overhead"]["factory_overhead_total"] = factory_overhead_total
-    
+
+    # 5. WIP
     wip = t["work_in_progress"]["items"]
     opening_wip = parse_number(wip["add_opening_wip"]["value"])
     closing_wip = parse_number(wip["less_closing_wip"]["value"])
-    
+
     production_cost = prime_cost + factory_overhead_total + opening_wip - closing_wip
     t["production_cost"]["value"] = production_cost
     t["transfer_to_trading"]["value"] = production_cost
+    
+    # Custom Data ကို ပြန်ထည့်
+    t["custom_data"] = custom_data
     return t
 
+
 def calculate_trading_pl(data: Dict[str, Any]) -> Dict[str, Any]:
+    custom_data = data.get("custom_data", {})
     t = merge_template_with_data("trading_pl", data)
+
+    # --- Revenue ---
     sales = t["trading"]["sales"]["items"]
-    net_sales = (parse_number(sales["cash_sales"]["value"]) + parse_number(sales["credit_sales"]["value"]) - parse_number(sales["less_sales_return"]["value"]))
+    net_sales = (
+        parse_number(sales["cash_sales"]["value"])
+        + parse_number(sales["credit_sales"]["value"])
+        - parse_number(sales["less_sales_return"]["value"])
+    )
+
+    for item in custom_data.get("revenue", []):
+        if item.get("value"):
+            net_sales += parse_number(item["value"])
+    
+    if data.get("_total_revenue") is not None:
+        net_sales = parse_number(data["_total_revenue"])
+        
     t["trading"]["sales"]["net_sales"] = net_sales
-    
+
+    # --- Cost of Sales ---
     cogs = t["trading"]["cogs"]["items"]
-    cogs_total = (parse_number(cogs["opening_stock_finished"]["value"]) + parse_number(cogs["add_purchases"]["value"]) + parse_number(cogs["add_manufacturing_cost"]["value"]) + parse_number(cogs["add_carriage_inward"]["value"]) + parse_number(cogs["add_duty"]["value"]) - parse_number(cogs["less_purchase_return"]["value"]) - parse_number(cogs["less_closing_stock"]["value"]))
+    
+    closing_stock = parse_number(cogs["less_closing_stock"]["value"])
+    if data.get("closing_stock") is not None:
+        closing_stock = parse_number(data["closing_stock"])
+    elif data.get("closing_stock_finished") is not None:
+        closing_stock = parse_number(data["closing_stock_finished"])
+        
+    cogs_total = (
+        parse_number(cogs["opening_stock_finished"]["value"])
+        + parse_number(cogs["add_purchases"]["value"])
+        + parse_number(cogs["add_manufacturing_cost"]["value"])
+        + parse_number(cogs["add_carriage_inward"]["value"])
+        + parse_number(cogs["add_duty"]["value"])
+        - parse_number(cogs["less_purchase_return"]["value"])
+        - closing_stock
+    )
+
+    for item in custom_data.get("cos", []):
+        if item.get("value"):
+            cogs_total += parse_number(item["value"])
+            
+    if data.get("_total_cos") is not None:
+        cogs_total = parse_number(data["_total_cos"])
+
     t["trading"]["cogs"]["cogs_total"] = cogs_total
-    
+    t["trading"]["cogs"]["items"]["less_closing_stock"]["value"] = closing_stock
+
+    # --- Gross Profit ---
     gross_profit = net_sales - cogs_total
+    if data.get("_gross_profit") is not None:
+        gross_profit = parse_number(data["_gross_profit"])
     t["trading"]["gross_profit"]["value"] = gross_profit
-    
+
+    # --- Other Income ---
     oi = t["profit_loss"]["other_income"]["items"]
     other_income_total = sum(parse_number(item["value"]) for item in oi.values())
     t["profit_loss"]["other_income"]["other_income_total"] = other_income_total
-    
+
+    # --- Expenses ---
     ex = t["profit_loss"]["expenses"]["items"]
     expenses_total = sum(parse_number(item["value"]) for item in ex.values())
+
+    for item in custom_data.get("expenses", []):
+        if item.get("value"):
+            expenses_total += parse_number(item["value"])
+            
+    if data.get("_total_expenses") is not None:
+        expenses_total = parse_number(data["_total_expenses"])
+
     t["profit_loss"]["expenses"]["expenses_total"] = expenses_total
-    
+    t["custom_data"] = custom_data
+
+    # --- Net Profit ---
     net_profit = gross_profit + other_income_total - expenses_total
+    if data.get("_net_profit") is not None:
+        net_profit = parse_number(data["_net_profit"])
     t["profit_loss"]["net_profit"]["value"] = net_profit
+
     return t
+
 
 def calculate_balance_sheet(data: Dict[str, Any]) -> Dict[str, Any]:
     t = merge_template_with_data("balance_sheet", data)
-    
+
     ca = t["assets"]["current_assets"]["items"]
     current_assets_total = sum(parse_number(item["value"]) for item in ca.values())
     t["assets"]["current_assets"]["current_assets_total"] = current_assets_total
-    
+
     fa = t["assets"]["fixed_assets"]["items"]
-    fixed_assets_total = (sum(parse_number(v["value"]) for k, v in fa.items() if not v.get("is_deduction", False)) - parse_number(fa["less_depreciation"]["value"]))
+    fixed_assets_total = (
+        sum(
+            parse_number(v["value"])
+            for k, v in fa.items()
+            if not v.get("is_deduction", False)
+        )
+        - parse_number(fa["less_depreciation"]["value"])
+    )
     t["assets"]["fixed_assets"]["fixed_assets_total"] = fixed_assets_total
-    
+
     total_assets = current_assets_total + fixed_assets_total
     t["assets"]["total_assets"]["value"] = total_assets
-    
+
     cl = t["liabilities"]["current_liabilities"]["items"]
     current_liabilities_total = sum(parse_number(item["value"]) for item in cl.values())
     t["liabilities"]["current_liabilities"]["current_liabilities_total"] = current_liabilities_total
-    
+
     total_liabilities = current_liabilities_total
     t["liabilities"]["total_liabilities"]["value"] = total_liabilities
-    
+
     cap = t["capital"]["items"]
-    capital_total = (parse_number(cap["eq_capital"]["value"]) + parse_number(cap["eq_retain"]["value"]) + parse_number(cap["eq_profit"]["value"]) - parse_number(cap["eq_drawing"]["value"]))
+    capital_total = (
+        parse_number(cap["eq_capital"]["value"])
+        + parse_number(cap["eq_retain"]["value"])
+        + parse_number(cap["eq_profit"]["value"])
+        - parse_number(cap["eq_drawing"]["value"])
+    )
     t["capital"]["capital_total"] = capital_total
-    
+
     liab_cap = total_liabilities + capital_total
     t["balance_check"]["liabilities_and_capital"]["value"] = liab_cap
     diff = total_assets - liab_cap
     t["balance_check"]["difference"] = diff
     t["balance_check"]["is_balanced"] = abs(diff) < 0.01
     return t
+
 
 # ============================================================
 # 2. HTML RENDER HELPERS
@@ -367,17 +483,23 @@ def _build_html_header(client_name: str, title: str, period_str: str) -> str:
     </div>
     """
 
-def _build_html_row(label: str, value: float, is_subtotal=False, is_total=False, is_deduction=False, is_bold=False):
-    if is_subtotal: css_class = "subtotal-row"
-    elif is_total: css_class = "total-row"
-    else: css_class = ""
-    
-    amount_str = format_number(value, decimals=2)
+
+def _build_html_row(label: str, value: float, is_subtotal=False, is_total=False,
+                    is_deduction=False, is_bold=False):
+    if is_subtotal:
+        css_class = "subtotal-row"
+    elif is_total:
+        css_class = "total-row"
+    else:
+        css_class = ""
+
+    # ⭐ format_number ကို decimals=0 နဲ့ ခေါ်မယ် (ဒသမ မပါအောင်)
+    amount_str = format_number(value, decimals=0)
     if is_deduction:
         amount_str = f"({amount_str})"
-        
+
     label_style = "font-weight: bold;" if is_bold else ""
-        
+
     return f"""
     <tr class="{css_class}">
         <td class="label" style="{label_style}">{label}</td>
@@ -385,8 +507,11 @@ def _build_html_row(label: str, value: float, is_subtotal=False, is_total=False,
     </tr>
     """
 
+
 def _render_manufacturing_html(t: Dict[str, Any], lang: str) -> str:
     html = ""
+    custom_data = t.get("custom_data", {})
+    
     dm = t["direct_materials"]
     html += f'<tr class="section-header"><td colspan="2">{get_pdf_text(lang, "m1")}</td></tr>'
     html += _build_html_row(get_pdf_text(lang, "opening_stock_raw"), dm["items"]["opening_stock_raw"]["value"])
@@ -394,45 +519,80 @@ def _render_manufacturing_html(t: Dict[str, Any], lang: str) -> str:
     html += _build_html_row(get_pdf_text(lang, "carriage_inward"), dm["items"]["carriage_inward"]["value"])
     html += _build_html_row(get_pdf_text(lang, "customs_duty"), dm["items"]["customs_duty"]["value"])
     html += _build_html_row(get_pdf_text(lang, "closing_stock_raw"), dm["items"]["closing_stock_raw"]["value"], is_deduction=True)
-    html += _build_html_row(get_pdf_text(lang, "cost_of_materials_used"), dm["cost_of_materials_used"], is_subtotal=True)
     
+    # Custom Direct Materials ပြ
+    for item in custom_data.get("direct_materials", []):
+        if item.get("label") and item.get("value", 0) > 0:
+            html += _build_html_row(item["label"], item["value"])
+            
+    html += _build_html_row(get_pdf_text(lang, "cost_of_materials_used"), dm["cost_of_materials_used"], is_subtotal=True)
+
     dl = t["direct_labour"]
     html += f'<tr class="section-header"><td colspan="2">{get_pdf_text(lang, "m2")}</td></tr>'
     for k in ["wages_direct", "wages_overtime", "wages_contract"]:
         html += _build_html_row(get_pdf_text(lang, k), dl["items"][k]["value"])
+        
+    # Custom Direct Labour ပြ
+    for item in custom_data.get("direct_labour", []):
+        if item.get("label") and item.get("value", 0) > 0:
+            html += _build_html_row(item["label"], item["value"])
+            
     html += _build_html_row(get_pdf_text(lang, "direct_labour_total"), dl["direct_labour_total"], is_subtotal=True)
-    
+
     de = t["direct_expenses"]
     html += f'<tr class="section-header"><td colspan="2">{get_pdf_text(lang, "m3")}</td></tr>'
     for k in ["royalty", "hire_plant", "fuel_power_direct"]:
         html += _build_html_row(get_pdf_text(lang, k), de["items"][k]["value"])
+        
+    # Custom Direct Expenses ပြ
+    for item in custom_data.get("direct_expenses", []):
+        if item.get("label") and item.get("value", 0) > 0:
+            html += _build_html_row(item["label"], item["value"])
+            
     html += _build_html_row(get_pdf_text(lang, "direct_expenses_total"), de["direct_expenses_total"], is_subtotal=True)
-    
+
     html += _build_html_row(get_pdf_text(lang, "prime_cost"), t["prime_cost"]["value"], is_total=True)
-    
+
     fo = t["factory_overhead"]
     html += f'<tr class="section-header"><td colspan="2">{get_pdf_text(lang, "m4")}</td></tr>'
     for k, item in fo["items"].items():
         html += _build_html_row(get_pdf_text(lang, k), item["value"])
+        
+    # Custom Factory Overhead ပြ
+    for item in custom_data.get("factory_overhead", []):
+        if item.get("label") and item.get("value", 0) > 0:
+            html += _build_html_row(item["label"], item["value"])
+            
     html += _build_html_row(get_pdf_text(lang, "factory_overhead_total"), fo["factory_overhead_total"], is_subtotal=True)
-    
+
     wip = t["work_in_progress"]["items"]
     html += f'<tr class="section-header"><td colspan="2">{get_pdf_text(lang, "m5")}</td></tr>'
     html += _build_html_row(get_pdf_text(lang, "add_opening_wip"), wip["add_opening_wip"]["value"])
     html += _build_html_row(get_pdf_text(lang, "less_closing_wip"), wip["less_closing_wip"]["value"], is_deduction=True)
-    
+
     html += _build_html_row(get_pdf_text(lang, "production_cost"), t["production_cost"]["value"], is_total=True)
     return html
 
-def _render_trading_pl_html(t: Dict[str, Any], lang: str) -> str:
+
+def _render_trading_pl_html(t: Dict[str, Any], lang: str, data: Dict[str, Any]) -> str:
     html = ""
+    
+    # --- Trading Account ---
     html += f'<tr class="section-header"><td colspan="2">{get_pdf_text(lang, "trading_acc_title")}</td></tr>'
     sales = t["trading"]["sales"]["items"]
+    
     html += _build_html_row(get_pdf_text(lang, "cash_sales"), sales["cash_sales"]["value"])
     html += _build_html_row(get_pdf_text(lang, "credit_sales"), sales["credit_sales"]["value"])
     html += _build_html_row(get_pdf_text(lang, "less_sales_return"), sales["less_sales_return"]["value"], is_deduction=True)
+
+    # Custom Revenue ပြ
+    custom_data = t.get("custom_data", {})
+    for item in custom_data.get("revenue", []):
+        if item.get("label") and item.get("value", 0) > 0:
+            html += _build_html_row(item["label"], item["value"])
+
     html += _build_html_row(get_pdf_text(lang, "net_sales"), t["trading"]["sales"]["net_sales"], is_subtotal=True)
-    
+
     cogs = t["trading"]["cogs"]["items"]
     html += _build_html_row(get_pdf_text(lang, "opening_stock_finished"), cogs["opening_stock_finished"]["value"])
     html += _build_html_row(get_pdf_text(lang, "add_purchases"), cogs["add_purchases"]["value"])
@@ -440,61 +600,93 @@ def _render_trading_pl_html(t: Dict[str, Any], lang: str) -> str:
     html += _build_html_row(get_pdf_text(lang, "add_carriage_inward"), cogs["add_carriage_inward"]["value"])
     html += _build_html_row(get_pdf_text(lang, "add_duty"), cogs["add_duty"]["value"])
     html += _build_html_row(get_pdf_text(lang, "less_purchase_return"), cogs["less_purchase_return"]["value"], is_deduction=True)
-    html += _build_html_row(get_pdf_text(lang, "less_closing_stock"), cogs["less_closing_stock"]["value"], is_deduction=True)
-    html += _build_html_row(get_pdf_text(lang, "cogs_total"), t["trading"]["cogs"]["cogs_total"], is_subtotal=True)
     
+    # အပိတ်ကုန်ချောကို သေချာဆွဲထုတ်မယ်
+    closing_stock_val = cogs["less_closing_stock"]["value"]
+    html += _build_html_row(get_pdf_text(lang, "less_closing_stock"), closing_stock_val, is_deduction=True)
+
+    # Custom COS ပြ
+    for item in custom_data.get("cos", []):
+        if item.get("label") and item.get("value", 0) > 0:
+            html += _build_html_row(item["label"], item["value"])
+
+    html += _build_html_row(get_pdf_text(lang, "cogs_total"), t["trading"]["cogs"]["cogs_total"], is_subtotal=True)
+
     gp = t["trading"]["gross_profit"]
     gp_label = get_pdf_text(lang, "gross_profit") if gp["value"] >= 0 else ("အရှုံး" if lang=="my" else "Gross Loss")
     html += _build_html_row(gp_label, gp["value"], is_total=True)
-    
+
+    # --- P&L Account ---
     html += f'<tr class="section-header"><td colspan="2">{get_pdf_text(lang, "pl_acc_title")}</td></tr>'
     html += _build_html_row(get_pdf_text(lang, "start_with_gp"), gp["value"], is_bold=True)
-    
+
     html += f'<tr class="section-header"><td colspan="2">{get_pdf_text(lang, "other_income")}</td></tr>'
     oi = t["profit_loss"]["other_income"]["items"]
     for k, item in oi.items(): 
         html += _build_html_row(item["label_mm"] if lang=="my" else item["label_en"], item["value"])
     html += _build_html_row(get_pdf_text(lang, "other_income_total"), t["profit_loss"]["other_income"]["other_income_total"], is_subtotal=True)
-    
+
     html += f'<tr class="section-header"><td colspan="2">{get_pdf_text(lang, "expenses")}</td></tr>'
-    ex = t["profit_loss"]["expenses"]["items"]
-    for k, item in ex.items(): 
-        html += _build_html_row(item["label_mm"] if lang=="my" else item["label_en"], item["value"])
-    html += _build_html_row(get_pdf_text(lang, "expenses_total"), t["profit_loss"]["expenses"]["expenses_total"], is_subtotal=True)
     
+    # ⭐ ၁။ မူလ Default Expense တွေ (ဝန်ထမ်းခ၊ လျှပ်စစ်၊ တယ်လီဖုန်း စသဖြင့်) ကို ဆွဲထုတ်မယ်
+    # သင့် Terminal ထဲက Key တွေကို တိုက်ရိုက်ယူပြီး စာရင်းထဲထည့်မယ်
+    default_expenses_map = {
+        "staff_salary": "ဝန်ထမ်းခနှင့် အလုပ်သမားခ",
+        "tax_other": "အခွန်နှင့် အခြား",
+        "electricity": "လျှပ်စစ်",
+        "telephone": "တယ်လီဖုန်း",
+        "fuel": "လောင်စာ",
+        "repair_maintenance": "ပြုပြင်ထိန်းသိမ်းမှု",
+        "general_expenses": "အထွေထွေ သုံးစွဲမှု",
+    }
+    
+    # မူလ Default Expense တွေ ပြ
+    for key, label in default_expenses_map.items():
+        val = parse_number(data.get(key, 0))
+        if val > 0:
+            html += _build_html_row(label, val)
+    
+    # ⭐ ၂။ UI က လွှတ်လိုက်တဲ့ Custom Expenses တွေ ဆက်ပြမယ် (Wifi စသဖြင့်)
+    for item in custom_data.get("expenses", []):
+        if item.get("label") and item.get("value", 0) > 0:
+            html += _build_html_row(item["label"], item["value"])
+    
+    html += _build_html_row(get_pdf_text(lang, "expenses_total"), t["profit_loss"]["expenses"]["expenses_total"], is_subtotal=True)
+
     np_ = t["profit_loss"]["net_profit"]
     np_label = get_pdf_text(lang, "net_profit") if np_["value"] >= 0 else ("အသားတင် အရှုံး" if lang=="my" else "Net Loss")
     html += _build_html_row(np_label, np_["value"], is_total=True)
     return html
 
+
 def _render_balance_sheet_html(t: Dict[str, Any], lang: str) -> str:
     html = ""
     html += f'<tr class="section-header"><td colspan="2">{get_pdf_text(lang, "bs_assets_title")}</td></tr>'
-    
+
     html += f'<tr class="sub-section"><td colspan="2">{get_pdf_text(lang, "bs_ca_title")}</td></tr>'
     ca = t["assets"]["current_assets"]["items"]
-    for k, item in ca.items(): 
+    for k, item in ca.items():
         html += _build_html_row(get_pdf_text(lang, k), item["value"])
     html += _build_html_row(get_pdf_text(lang, "current_assets_total"), t["assets"]["current_assets"]["current_assets_total"], is_subtotal=True)
-    
+
     html += f'<tr class="sub-section"><td colspan="2">{get_pdf_text(lang, "bs_fa_title")}</td></tr>'
     fa = t["assets"]["fixed_assets"]["items"]
     for k, item in fa.items():
         is_ded = item.get("is_deduction", False)
         html += _build_html_row(get_pdf_text(lang, k), item["value"], is_deduction=is_ded)
     html += _build_html_row(get_pdf_text(lang, "fixed_assets_total"), t["assets"]["fixed_assets"]["fixed_assets_total"], is_subtotal=True)
-    
+
     html += _build_html_row(get_pdf_text(lang, "total_assets"), t["assets"]["total_assets"]["value"], is_total=True)
-    
+
     html += f'<tr class="section-header"><td colspan="2">{get_pdf_text(lang, "bs_liab_title")}</td></tr>'
     html += f'<tr class="sub-section"><td colspan="2">{get_pdf_text(lang, "bs_cl_title")}</td></tr>'
     cl = t["liabilities"]["current_liabilities"]["items"]
-    for k, item in cl.items(): 
+    for k, item in cl.items():
         html += _build_html_row(get_pdf_text(lang, k), item["value"])
     html += _build_html_row(get_pdf_text(lang, "current_liabilities_total"), t["liabilities"]["current_liabilities"]["current_liabilities_total"], is_subtotal=True)
-    
+
     html += _build_html_row(get_pdf_text(lang, "total_liabilities"), t["liabilities"]["total_liabilities"]["value"], is_total=True)
-    
+
     html += f'<tr class="section-header"><td colspan="2">{get_pdf_text(lang, "bs_cap_title")}</td></tr>'
     cap = t["capital"]["items"]
     html += _build_html_row(get_pdf_text(lang, "eq_capital"), cap["eq_capital"]["value"])
@@ -502,20 +694,22 @@ def _render_balance_sheet_html(t: Dict[str, Any], lang: str) -> str:
     html += _build_html_row(get_pdf_text(lang, "eq_profit"), cap["eq_profit"]["value"])
     html += _build_html_row(get_pdf_text(lang, "eq_drawing"), cap["eq_drawing"]["value"], is_deduction=True)
     html += _build_html_row(get_pdf_text(lang, "capital_total"), t["capital"]["capital_total"], is_subtotal=True)
-    
+
     html += _build_html_row(get_pdf_text(lang, "liabilities_and_capital"), t["balance_check"]["liabilities_and_capital"]["value"], is_total=True)
-    
+
     diff = t["balance_check"]["difference"]
     is_balanced = t["balance_check"]["is_balanced"]
     if is_balanced:
         msg = get_pdf_text(lang, "balanced_msg")
         css_class = "balanced"
     else:
-        msg = get_pdf_text(lang, "not_balanced_msg").format(format_number(diff, 2))
+        # ⭐ ဒီနေရာမှာလည်း decimals=0 ဖြစ်အောင် ပြင်ထားတယ်
+        msg = get_pdf_text(lang, "not_balanced_msg").format(format_number(diff, decimals=0))
         css_class = "not-balanced"
-        
+
     html += f'<tr class="{css_class}"><td colspan="2" style="text-align:center; font-weight:bold; padding: 10px;">{msg}</td></tr>'
     return html
+
 
 def _render_cash_flow_html(data: Dict[str, Any], lang: str) -> str:
     html = ""
@@ -524,34 +718,40 @@ def _render_cash_flow_html(data: Dict[str, Any], lang: str) -> str:
     dep = parse_number(data.get("depreciation", 0))
     html += _build_html_row(get_pdf_text(lang, "cf_net_profit"), net_profit)
     html += _build_html_row(get_pdf_text(lang, "cf_depreciation"), dep)
-    
+
     op_profit = net_profit + dep
     html += _build_html_row(get_pdf_text(lang, "cf_op_profit"), op_profit, is_subtotal=True)
-    
+
     inv_chg = -parse_number(data.get("change_inventories", 0))
     rec_chg = -parse_number(data.get("change_receivable", 0))
     pay_chg = parse_number(data.get("change_payable", 0))
     wc_chg = inv_chg + rec_chg + pay_chg
-    if inv_chg != 0: html += _build_html_row(get_pdf_text(lang, "cf_inv_change"), inv_chg, is_deduction=(inv_chg < 0))
-    if rec_chg != 0: html += _build_html_row(get_pdf_text(lang, "cf_rec_change"), rec_chg, is_deduction=(rec_chg < 0))
-    if pay_chg != 0: html += _build_html_row(get_pdf_text(lang, "cf_pay_change"), pay_chg, is_deduction=(pay_chg < 0))
-    
+    if inv_chg != 0:
+        html += _build_html_row(get_pdf_text(lang, "cf_inv_change"), inv_chg, is_deduction=(inv_chg < 0))
+    if rec_chg != 0:
+        html += _build_html_row(get_pdf_text(lang, "cf_rec_change"), rec_chg, is_deduction=(rec_chg < 0))
+    if pay_chg != 0:
+        html += _build_html_row(get_pdf_text(lang, "cf_pay_change"), pay_chg, is_deduction=(pay_chg < 0))
+
     net_op = op_profit + wc_chg
     html += _build_html_row(get_pdf_text(lang, "cf_net_op"), net_op, is_total=True)
-    
+
     html += f'<tr class="section-header"><td colspan="2">{get_pdf_text(lang, "cf_inv_title")}</td></tr>'
     invest_fa = -parse_number(data.get("investing_purchase_fa", 0))
-    if invest_fa != 0: html += _build_html_row(get_pdf_text(lang, "cf_invest_fa"), invest_fa, is_deduction=True)
+    if invest_fa != 0:
+        html += _build_html_row(get_pdf_text(lang, "cf_invest_fa"), invest_fa, is_deduction=True)
     html += _build_html_row(get_pdf_text(lang, "cf_net_investing"), invest_fa, is_total=True)
-    
+
     html += f'<tr class="section-header"><td colspan="2">{get_pdf_text(lang, "cf_fin_title")}</td></tr>'
     fin_loan = parse_number(data.get("financing_loan_increase", 0))
     fin_draw = -parse_number(data.get("financing_drawing", 0))
-    if fin_loan != 0: html += _build_html_row(get_pdf_text(lang, "cf_fin_loan"), fin_loan)
-    if fin_draw != 0: html += _build_html_row(get_pdf_text(lang, "cf_fin_draw"), fin_draw, is_deduction=True)
+    if fin_loan != 0:
+        html += _build_html_row(get_pdf_text(lang, "cf_fin_loan"), fin_loan)
+    if fin_draw != 0:
+        html += _build_html_row(get_pdf_text(lang, "cf_fin_draw"), fin_draw, is_deduction=True)
     net_fin = fin_loan + fin_draw
     html += _build_html_row(get_pdf_text(lang, "cf_net_financing"), net_fin, is_total=True)
-    
+
     html += f'<tr class="section-header"><td colspan="2">{get_pdf_text(lang, "cf_summary_title")}</td></tr>'
     net_chg = net_op + invest_fa + net_fin
     open_cash = parse_number(data.get("opening_cash", 0))
@@ -559,26 +759,31 @@ def _render_cash_flow_html(data: Dict[str, Any], lang: str) -> str:
     html += _build_html_row(get_pdf_text(lang, "cf_net_change"), net_chg, is_subtotal=True)
     html += _build_html_row(get_pdf_text(lang, "cf_opening_cash"), open_cash)
     html += _build_html_row(get_pdf_text(lang, "cf_closing_cash"), close_cash, is_total=True)
-    
+
     return html
+
 
 # ============================================================
 # 3. MAIN PUBLIC API
 # ============================================================
 
-def generate_pdf(statement_type: str, client_name: str, 
-                 data: Dict[str, Any], period_end: str = "", 
-                 as_at_date: str = "", 
-                 output_path: Optional[str] = None,
-                 lang: str = "my") -> bytes:
-    
+def generate_pdf(
+    statement_type: str,
+    client_name: str,
+    data: Dict[str, Any],
+    period_end: str = "",
+    as_at_date: str = "",
+    output_path: Optional[str] = None,
+    lang: str = "my",
+) -> bytes:
+
     titles = {
         "manufacturing": get_pdf_text(lang, "manufacturing_title"),
-        "trading_pl":    get_pdf_text(lang, "trading_pl_title"),
+        "trading_pl": get_pdf_text(lang, "trading_pl_title"),
         "balance_sheet": get_pdf_text(lang, "balance_sheet_title"),
-        "cash_flow":     get_pdf_text(lang, "cash_flow_title"),
+        "cash_flow": get_pdf_text(lang, "cash_flow_title"),
     }
-    
+
     if statement_type not in titles:
         raise ValueError(f"မသိသော statement type: {statement_type}")
 
@@ -590,8 +795,20 @@ def generate_pdf(statement_type: str, client_name: str,
     elif statement_type == "trading_pl":
         data["period_end"] = period_end
         t_res = calculate_trading_pl(data)
+
+        if data.get("_total_revenue") is not None:
+            t_res["trading"]["sales"]["net_sales"] = data["_total_revenue"]
+        if data.get("_total_cos") is not None:
+            t_res["trading"]["cogs"]["cogs_total"] = data["_total_cos"]
+        if data.get("_gross_profit") is not None:
+            t_res["trading"]["gross_profit"]["value"] = data["_gross_profit"]
+        if data.get("_total_expenses") is not None:
+            t_res["profit_loss"]["expenses"]["expenses_total"] = data["_total_expenses"]
+        if data.get("_net_profit") is not None:
+            t_res["profit_loss"]["net_profit"]["value"] = data["_net_profit"]
+
         period_str = f"{get_pdf_text(lang, 'period_end')}: {format_date_mm(period_end)}"
-        table_html = _render_trading_pl_html(t_res, lang)
+        table_html = _render_trading_pl_html(t_res, lang, data)
     elif statement_type == "balance_sheet":
         data["as_at_date"] = as_at_date
         t_res = calculate_balance_sheet(data)
@@ -601,7 +818,7 @@ def generate_pdf(statement_type: str, client_name: str,
         data["period_end"] = period_end
         period_str = f"{get_pdf_text(lang, 'period_end')}: {format_date_mm(period_end)}"
         table_html = _render_cash_flow_html(data, lang)
-    
+
     full_html = f"""
     <!DOCTYPE html>
     <html>
@@ -618,7 +835,7 @@ def generate_pdf(statement_type: str, client_name: str,
                 src: url('file://{FONT_BOLD}');
                 font-weight: bold;
             }}
-            
+
             @page {{
                 size: A4 portrait;
                 margin: 15mm;
@@ -635,44 +852,44 @@ def generate_pdf(statement_type: str, client_name: str,
                     color: #777;
                 }}
             }}
-            
+
             body {{
                 font-family: 'Pyidaungsu', sans-serif;
                 font-size: 10pt;
                 color: #212121;
             }}
-            
+
             .header {{ text-align: center; margin-bottom: 15px; }}
             .header h1 {{ font-size: 16pt; font-weight: bold; color: #1f4788; margin: 0; }}
             .header h2 {{ font-size: 13pt; font-weight: bold; margin: 5px 0 0 0; }}
             .header .period {{ font-size: 10pt; color: #666; margin-top: 5px; }}
-            
+
             hr {{ border: 1px solid #1f4788; margin-bottom: 10px; }}
-            
+
             table {{ width: 100%; border-collapse: collapse; }}
             td {{ padding: 4px 8px; }}
             .label {{ text-align: left; }}
             .amount {{ text-align: right; }}
-            
+
             .section-header td {{
                 background-color: #e3f2fd; color: #1565c0; font-weight: bold;
                 padding-top: 8px; padding-bottom: 8px;
                 border-top: 1px solid #90caf9; border-bottom: 1px solid #90caf9;
             }}
-            
+
             .sub-section td {{
                 font-weight: bold; color: #333; padding-top: 6px; padding-bottom: 6px;
             }}
-            
+
             .subtotal-row td {{
                 background-color: #f5f5f5; font-weight: bold; border-top: 1px solid #ddd;
             }}
-            
+
             .total-row td {{
                 background-color: #fff3e0; color: #e65100; font-weight: bold; font-size: 11pt;
                 border-top: 2px solid #e65100; border-bottom: 2px solid #e65100;
             }}
-            
+
             .balanced td {{ color: #2e7d32; background-color: #e8f5e9; }}
             .not-balanced td {{ color: #c62828; background-color: #ffebee; }}
         </style>
@@ -686,12 +903,12 @@ def generate_pdf(statement_type: str, client_name: str,
     </body>
     </html>
     """
-    
+
     pdf_bytes = HTML(string=full_html).write_pdf()
-    
+
     if output_path:
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
         with open(output_path, "wb") as f:
             f.write(pdf_bytes)
-            
+
     return pdf_bytes

@@ -180,8 +180,8 @@ def get_statement(client_id: int, statement_type: str):
 
 def save_statement(client_id: int, statement_type: str,
                    period_end: str = "", data_json: str = "",
-                   as_at_date: str = "", **kwargs) -> int:
-    """ရှင်းတမ်း သိမ်းခြင်း (ရှိပြီးသားဆိုရင် update)"""
+                   as_at_date: str = "", custom_data: list = None, **kwargs) -> int:
+    """ရှင်းတမ်း သိမ်းခြင်း (custom_data ပါဝင်တယ်)"""
     conn = get_supabase()
     
     if isinstance(data_json, str):
@@ -194,18 +194,21 @@ def save_statement(client_id: int, statement_type: str,
     try:
         existing = get_statement(client_id, statement_type)
         
+        payload = {
+            "period_end": date_val,
+            "data": data_dict,
+        }
+        
+        # trading_pl အတွက်ပဲ custom_data ထည့်မယ်
+        if statement_type == "trading_pl":
+            payload["custom_data"] = custom_data or []
+        
         if existing:
-            res = conn.table(statement_type).update({
-                "period_end": date_val,
-                "data": data_dict,
-            }).eq("id", existing["id"]).execute()
+            res = conn.table(statement_type).update(payload).eq("id", existing["id"]).execute()
             return existing["id"]
         else:
-            res = conn.table(statement_type).insert({
-                "client_id": client_id,
-                "period_end": date_val,
-                "data": data_dict,
-            }).execute()
+            payload["client_id"] = client_id
+            res = conn.table(statement_type).insert(payload).execute()
             return res.data[0]["id"]
     except Exception as e:
         print(f"Save statement error: {e}")

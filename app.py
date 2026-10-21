@@ -368,3 +368,13 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# app.py ထဲက main() ရဲ့ အောက်ဆုံးမှာ ထည့်ပါ
+try:
+    from core.db import supabase
+    supabase.auth.sign_in_with_password({
+        "email": "vassiliburma@gmail.com", # သင့် Supabase မှာ ဖန်တီးထားတဲ့ Email
+        "password": "PonPyay2081981!@#"     # သင့် Supabase မှာ ဖန်တီးထားတဲ့ Password
+    })
+except Exception as e:
+    st.warning(f"Database Auth Error: {e}")
