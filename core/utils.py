@@ -19,15 +19,15 @@ import streamlit as st
 # ============================================================
 
 def format_number(value: Union[int, float, Decimal, None], 
-                  decimals: int = 2, 
+                  decimals: int = 0, 
                   use_commas: bool = True) -> str:
     """
     Number ကို comma-separated string အဖြစ် format လုပ်ခြင်း
     
     Examples:
-        format_number(1234567.5)     -> '1,234,567.50'
-        format_number(1234567.5, 0)  -> '1,234,568'
-        format_number(None)          -> '0.00'
+        format_number(1234567)       -> '1,234,567'
+        format_number(1234567.50)    -> '1,234,568' (ဒသမကို ဖြတ်ချမယ်)
+        format_number(None)          -> '0'
     """
     if value is None or value == "":
         value = 0
@@ -35,34 +35,33 @@ def format_number(value: Union[int, float, Decimal, None],
     try:
         num = Decimal(str(value))
     except (ValueError, TypeError):
-        return "0.00"
+        return "0"
     
-    # Round
-    quantize_str = "1." + ("0" * decimals) if decimals > 0 else "1"
-    num = num.quantize(Decimal(quantize_str), rounding=ROUND_HALF_UP)
+    # Round လုပ်မယ်
+    if decimals == 0:
+        rounded = num.quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+    else:
+        quantize_str = "1." + ("0" * decimals)
+        rounded = num.quantize(Decimal(quantize_str), rounding=ROUND_HALF_UP)
     
-    # Format with commas
+    # Comma ခံမယ်
     if use_commas:
         if decimals > 0:
-            return f"{num:,.{decimals}f}"
+            return f"{rounded:,.{decimals}f}"
         else:
-            return f"{num:,.0f}"
+            return f"{rounded:,}"
     else:
         if decimals > 0:
-            return f"{num:.{decimals}f}"
+            return f"{rounded:.{decimals}f}"
         else:
-            return f"{num:.0f}"
+            return f"{rounded}"
 
 
 def format_currency(value: Union[int, float, Decimal, None], 
-                    decimals: int = 2,
+                    decimals: int = 0,
                     show_unit: bool = False) -> str:
     """
     ကျပ်ငွေ format လုပ်ခြင်း
-    
-    Examples:
-        format_currency(1234567.5)              -> '1,234,567.50'
-        format_currency(1234567.5, show_unit=True) -> '1,234,567.50 ကျပ်'
     """
     formatted = format_number(value, decimals)
     if show_unit:
@@ -73,11 +72,6 @@ def format_currency(value: Union[int, float, Decimal, None],
 def format_myanmar_currency(value: Union[int, float, Decimal, None]) -> str:
     """
     မြန်မာ့ပုံစံ ငွေကြေး format (သိန်း/သန်း ဖြင့်)
-    
-    Examples:
-        format_myanmar_currency(150000)    -> '1.50 သိန်း'
-        format_myanmar_currency(25000000)  -> '2.50 သန်း'
-        format_myanmar_currency(5000)      -> '5,000.00 ကျပ်'
     """
     if value is None:
         value = 0
@@ -85,14 +79,14 @@ def format_myanmar_currency(value: Union[int, float, Decimal, None]) -> str:
     try:
         num = float(value)
     except (ValueError, TypeError):
-        return "0.00 ကျပ်"
+        return "0 ကျပ်"
     
     abs_num = abs(num)
     
     if abs_num >= 10_000_000:  # 1 သန်း
-        return f"{num / 1_000_000:,.2f} သန်း"
+        return f"{num / 1_000_000:,.0f} သန်း"  # ဒသမမလိုရင် 0f ပြောင်း
     elif abs_num >= 100_000:   # 1 သိန်း
-        return f"{num / 100_000:,.2f} သိန်း"
+        return f"{num / 100_000:,.0f} သိန်း"
     else:
         return f"{format_number(num)} ကျပ်"
 
@@ -100,11 +94,6 @@ def format_myanmar_currency(value: Union[int, float, Decimal, None]) -> str:
 def parse_number(value: Any) -> float:
     """
     String/input ကို float အဖြစ် ပြောင်းခြင်း (commas ဖယ်ရှား)
-    
-    Examples:
-        parse_number('1,234,567.50') -> 1234567.5
-        parse_number('')             -> 0.0
-        parse_number(None)           -> 0.0
     """
     if value is None or value == "":
         return 0.0
@@ -122,7 +111,6 @@ def parse_number(value: Any) -> float:
         return float(cleaned)
     except ValueError:
         return 0.0
-
 
 # ============================================================
 # 2. DATE HELPERS

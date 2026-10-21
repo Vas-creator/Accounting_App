@@ -20,6 +20,10 @@ st.set_page_config(
     layout="wide",
 )
 
+# ============================================================
+# AUTH + CLIENT CHECK
+# ============================================================
+
 if not st.session_state.get("authentication_status"):
     st.warning("⚠️ ကျေးဇူးပြု၍ အရင် ဝင်ရောက်ပါ" if st.session_state.get("language", "my") == "my" else "⚠️ Please login first")
     st.switch_page("app.py")
@@ -42,6 +46,10 @@ if not client:
     st.error("❌ ဖောက်သည် မတွေ့ပါ" if st.session_state.get("language", "my") == "my" else "❌ Client not found")
     st.stop()
 
+# ============================================================
+# LOAD EXISTING DATA
+# ============================================================
+
 existing = None
 saved_data = {}
 saved_date = ""
@@ -49,30 +57,59 @@ saved_date = ""
 try:
     existing = db.get_statement(client_id, "balance_sheet")
     if existing and existing.get("data"):
-        saved_data = json.loads(existing["data"])
+        raw_data = existing["data"]
+        if isinstance(raw_data, str):
+            saved_data = json.loads(raw_data)
+        elif isinstance(raw_data, dict):
+            saved_data = raw_data
+        
         saved_date = existing.get("as_at_date", "") or existing.get("period_end", "")
-except Exception:
+except Exception as e:
+    print(f"Balance Sheet Load Error: {e}")
     existing = None
     saved_data = {}
     saved_date = ""
 
+# Trading PL မှ Data ယူမယ်
 auto_net_profit = 0.0
 auto_depreciation = 0.0
 
 try:
     tpl_existing = db.get_statement(client_id, "trading_pl")
     if tpl_existing and tpl_existing.get("data"):
-        tpl_data = json.loads(tpl_existing["data"])
+        raw_tpl = tpl_existing["data"]
+        if isinstance(raw_tpl, str):
+            tpl_data = json.loads(raw_tpl)
+        else:
+            tpl_data = raw_tpl
         auto_net_profit = float(tpl_data.get("_net_profit", 0.0))
         auto_depreciation = float(tpl_data.get("_depreciation", 0.0))
 except Exception:
     pass
+
+# ============================================================
+# SESSION STATE (ဖောက်သည်ပြောင်းရင် ရှင်းမယ်)
+# ============================================================
+
+if st.session_state.get("current_bs_client_id") != client_id:
+    st.session_state.current_bs_client_id = client_id
+    if "bs_data" in st.session_state:
+        del st.session_state["bs_data"]
+    if "bs_date" in st.session_state:
+        del st.session_state["bs_date"]
+    for k in list(st.session_state.keys()):
+        if k.startswith("bs_"):
+            del st.session_state[k]
 
 if "bs_data" not in st.session_state:
     st.session_state.bs_data = dict(saved_data)
 
 if "bs_date" not in st.session_state:
     st.session_state.bs_date = saved_date or str(date.today())
+
+# ============================================================
+# SIDEBAR
+# ============================================================
 
 with st.sidebar:
     st.markdown(
@@ -108,6 +145,10 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
+# ============================================================
+# HEADER
+# ============================================================
+
 st.markdown(
     f"""
     <div style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); padding: 1.2rem 1.5rem; border-radius: 12px; color: white; margin-bottom: 1.5rem;">
@@ -119,6 +160,10 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+# ============================================================
+# DATE INPUT
+# ============================================================
 
 col1, col2 = st.columns([1, 3])
 with col1:
@@ -134,6 +179,10 @@ with col1:
     )
     st.session_state.bs_date = str(as_at_date)
 
+# ============================================================
+# HELPER FUNCTIONS
+# ============================================================
+
 def num_input(label: str, key: str, is_deduction: bool = False, default: float = None, help_text: str = "") -> float:
     if default is None:
         value = st.session_state.bs_data.get(key, 0.0)
@@ -141,17 +190,19 @@ def num_input(label: str, key: str, is_deduction: bool = False, default: float =
         value = st.session_state.bs_data.get(key, default)
 
     prefix = "➖ " if is_deduction else ""
+    
+    # ⭐ int နဲ့ %d ကို သုံးမယ် (ဒသမ မပါအောင်)
     result = st.number_input(
         f"{prefix}{label}",
-        value=float(value) if value else 0.0,
-        min_value=0.0,
-        step=1000.0,
-        format="%.2f",
+        value=int(value) if value else 0,
+        min_value=0,
+        step=1000,
+        format="%d",
         key=f"bs_{key}",
         help=help_text,
     )
     st.session_state.bs_data[key] = result
-    return result
+    return float(result)
 
 def subtotal_box(label: str, value: float, color: str = "#1976d2"):
     st.markdown(
@@ -165,6 +216,10 @@ def subtotal_box(label: str, value: float, color: str = "#1976d2"):
         """,
         unsafe_allow_html=True,
     )
+
+# ============================================================
+# 3 COLUMNS LAYOUT
+# ============================================================
 
 col1, col2, col3 = st.columns(3)
 
@@ -206,12 +261,13 @@ with col2:
     eq_capital = num_input("အရင်း (Capital)" if st.session_state.get("language") == "my" else "Capital", "eq_capital")
     eq_retain = num_input("စုဆောင်း အမြတ် (Retain Earning)" if st.session_state.get("language") == "my" else "Retain Earning", "eq_retain")
 
+    # ⭐ eq_profit ကိုလည်း int နဲ့ %d ပြောင်းမယ်
     eq_profit = st.number_input(
         "📈 ယခုနှစ် အမြတ် (Profit for the year) — Trading မှ" if st.session_state.get("language") == "my" else "📈 Profit for the year (from Trading)",
-        value=float(st.session_state.bs_data.get("eq_profit", auto_net_profit)),
-        min_value=-999999999999.0,
-        step=1000.0,
-        format="%.2f",
+        value=int(st.session_state.bs_data.get("eq_profit", auto_net_profit)),
+        min_value=-999999999999,
+        step=1000,
+        format="%d",
         key="bs_eq_profit_input",
         help="Trading & P&L page မှ auto-fill — လိုအပ်ရင် ပြင်လို့ရ" if st.session_state.get("language") == "my" else "Auto-filled from Trading & P&L",
     )
@@ -289,6 +345,10 @@ with col3:
     st.session_state.bs_data["_cash"] = ca_cash
     st.session_state.bs_data["_depreciation"] = auto_depreciation
 
+# ============================================================
+# ACTION BUTTONS
+# ============================================================
+
 st.markdown("<br>", unsafe_allow_html=True)
 st.divider()
 
@@ -334,7 +394,7 @@ with col2:
                 client_name=client["name"],
                 data=st.session_state.bs_data,
                 as_at_date=st.session_state.bs_date,
-                lang=st.session_state.language, # ⭐ Lang ထည့်ပြီး
+                lang=st.session_state.language,
             )
             st.download_button(
                 "⬇️ PDF Download",

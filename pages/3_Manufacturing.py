@@ -60,29 +60,76 @@ if not client:
 existing = None
 saved_data = {}
 saved_period = ""
+db_custom_data = {
+    "direct_materials": [], 
+    "direct_labour": [], 
+    "direct_expenses": [], 
+    "factory_overhead": []
+}
 
 try:
     existing = db.get_statement(client_id, "manufacturing")
     if existing and existing.get("data"):
-        saved_data = json.loads(existing["data"])
+        raw_data = existing["data"]
+        if isinstance(raw_data, str):
+            saved_data = json.loads(raw_data)
+        elif isinstance(raw_data, dict):
+            saved_data = raw_data
         saved_period = existing.get("period_end", "")
-    else:
-        saved_data = {}
-        saved_period = ""
+        
+        raw_custom = existing.get("custom_data")
+        if raw_custom:
+            if isinstance(raw_custom, str):
+                db_custom_data = json.loads(raw_custom)
+            elif isinstance(raw_custom, dict):
+                db_custom_data = raw_custom
 except Exception:
-    existing = None
-    saved_data = {}
-    saved_period = ""
+    pass
 
 # ============================================================
-# SESSION STATE INIT
+# SESSION STATE (ဖောက်သည်ပြောင်းရင် ရှင်းမယ်)
 # ============================================================
+
+if st.session_state.get("current_mfg_client_id") != client_id:
+    st.session_state.current_mfg_client_id = client_id
+    if "mfg_data" in st.session_state:
+        del st.session_state["mfg_data"]
+    if "mfg_custom_data" in st.session_state:
+        del st.session_state["mfg_custom_data"]
+    if "mfg_period" in st.session_state:
+        del st.session_state["mfg_period"]
+    for k in list(st.session_state.keys()):
+        if k.startswith("mfg_show_") or k.startswith("mfg_"):
+            if k != "mfg_period_input":
+                del st.session_state[k]
 
 if "mfg_data" not in st.session_state:
     st.session_state.mfg_data = dict(saved_data)
 
+if "mfg_custom_data" not in st.session_state:
+    st.session_state.mfg_custom_data = db_custom_data
+
 if "mfg_period" not in st.session_state:
     st.session_state.mfg_period = saved_period or str(date.today())
+
+# Show/Hide State များ
+if "mfg_show_dm" not in st.session_state:
+    st.session_state.mfg_show_dm = {
+        "opening_stock_raw": True, "purchases_raw": True, 
+        "carriage_inward": True, "customs_duty": True, "closing_stock_raw": True
+    }
+if "mfg_show_dl" not in st.session_state:
+    st.session_state.mfg_show_dl = {"wages_direct": True, "wages_overtime": True, "wages_contract": True}
+if "mfg_show_de" not in st.session_state:
+    st.session_state.mfg_show_de = {"royalty": True, "hire_plant": True, "fuel_power_direct": True}
+if "mfg_show_fo" not in st.session_state:
+    st.session_state.mfg_show_fo = {
+        "factory_rent": True, "factory_rates": True, "factory_insurance": True,
+        "factory_power": True, "factory_salary": True, "depreciation_plant": True,
+        "repairs_plant": True, "indirect_wages": True, "factory_misc": True
+    }
+if "mfg_show_wip" not in st.session_state:
+    st.session_state.mfg_show_wip = {"add_opening_wip": True, "less_closing_wip": True}
 
 # ============================================================
 # SIDEBAR
@@ -112,12 +159,7 @@ with st.sidebar:
 
     st.markdown(
         f"""
-        <div style="
-            background-color: #e3f2fd;
-            padding: 0.8rem;
-            border-radius: 8px;
-            border-left: 4px solid #1565c0;
-        ">
+        <div style="background-color: #e3f2fd; padding: 0.8rem; border-radius: 8px; border-left: 4px solid #1565c0;">
             <p style="margin: 0; font-size: 0.85rem; color: #666;">{'ဖောက်သည်' if st.session_state.get('language', 'my') == 'my' else 'Client'}</p>
             <p style="margin: 0.2rem 0 0 0; font-weight: bold; color: #1565c0;">
                 👤 {client['name']}
@@ -133,13 +175,7 @@ with st.sidebar:
 
 st.markdown(
     f"""
-    <div style="
-        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-        padding: 1.2rem 1.5rem;
-        border-radius: 12px;
-        color: white;
-        margin-bottom: 1.5rem;
-    ">
+    <div style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); padding: 1.2rem 1.5rem; border-radius: 12px; color: white; margin-bottom: 1.5rem;">
         <h1 style="margin: 0; font-size: 1.8rem;">
             🏭 {t('pdf_mfg')}
         </h1>
@@ -157,9 +193,14 @@ st.markdown(
 
 col1, col2 = st.columns([1, 3])
 with col1:
+    try:
+        initial_date = date.fromisoformat(st.session_state.mfg_period)
+    except Exception:
+        initial_date = date.today()
+
     period_end = st.date_input(
         f"📅 {t('period_end')}",
-        value=date.fromisoformat(st.session_state.mfg_period) if st.session_state.mfg_period else date.today(),
+        value=initial_date,
         key="mfg_period_input",
     )
     st.session_state.mfg_period = str(period_end)
@@ -167,260 +208,171 @@ with col1:
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ============================================================
-# INPUT HELPER
+# HELPER FUNCTIONS
 # ============================================================
 
-def number_input(label: str, key: str, help_text: str = "", 
-                 is_deduction: bool = False) -> float:
-    """Number input with formatting"""
+def mfg_num_input(label: str, key: str, is_deduction: bool = False, state_key: str = None) -> float:
     value = st.session_state.mfg_data.get(key, 0.0)
-    
     prefix = "➖ " if is_deduction else ""
     
-    result = st.number_input(
-        f"{prefix}{label}",
-        value=float(value) if value else 0.0,
-        min_value=0.0,
-        step=1000.0,
-        format="%.2f",
-        key=f"mfg_{key}",
-        help=help_text,
-    )
-    st.session_state.mfg_data[key] = result
-    return result
+    col_show, col_input = st.columns([0.5, 9.5])
+    with col_show:
+        default_show = st.session_state.get(state_key, {}).get(key, True)
+        show = st.checkbox("", value=default_show, key=f"mfg_show_{key}", label_visibility="collapsed")
+        st.session_state[state_key][key] = show
+    
+    with col_input:
+        if show:
+            # ⭐ int အဖြစ်ပြောင်းပြီး format="%d" သုံးမယ် (ဒသမတွေမပါအောင်)
+            result = st.number_input(
+                f"{prefix}{label}", value=int(value) if value else 0,
+                min_value=0, step=1000, format="%d", key=f"mfg_input_{key}",
+            )
+            st.session_state.mfg_data[key] = result
+            return float(result)
+        else:
+            st.session_state.mfg_data[key] = 0.0
+            return 0.0
+
+def render_mfg_custom_items(section_key: str, title: str):
+    st.markdown(f"**➕ {title}**")
+    items = st.session_state.mfg_custom_data.get(section_key, [])
+    
+    for i, item in enumerate(items):
+        col_x, col_y, col_z = st.columns([2, 2, 1])
+        with col_x:
+            item["label"] = st.text_input("Name", value=item.get("label", ""), key=f"mfg_{section_key}_label_{i}", label_visibility="collapsed")
+        with col_y:
+            # ⭐ Custom item တွေမှာလည်း int နဲ့ %d ပြောင်းမယ်
+            item["value"] = st.number_input(
+                "Amount", value=int(item.get("value", 0)), 
+                step=1000, format="%d", key=f"mfg_{section_key}_value_{i}", 
+                label_visibility="collapsed"
+            )
+        with col_z:
+            if st.button("🗑️", key=f"mfg_{section_key}_del_{i}"):
+                items.pop(i)
+                st.session_state.mfg_custom_data[section_key] = items
+                st.rerun()
+    
+    if st.button(f"➕ {'Item ထည့်' if st.session_state.get('language') == 'my' else 'Add Item'}", key=f"mfg_add_{section_key}"):
+        items.append({"label": "", "value": 0})
+        st.session_state.mfg_custom_data[section_key] = items
+        st.rerun()
+    
+    total = sum(item.get("value", 0) for item in items)
+    if total > 0:
+        st.markdown(f"**{'စုစုပေါင်း' if st.session_state.get('language') == 'my' else 'Total'}: {format_number(total)}**")
+    return total
+
+def subtotal_box(label: str, value: float, color: str = "#1976d2"):
+    st.markdown(f"""
+        <div style="background-color: {color}20; border-left: 3px solid {color}; padding: 0.6rem 0.8rem; border-radius: 6px; margin: 0.5rem 0;">
+            <span style="color: {color}; font-weight: bold;">{label}:</span>
+            <span style="float: right; font-weight: bold; color: {color};">{format_number(value)}</span>
+        </div>
+        """, unsafe_allow_html=True)
 
 # ============================================================
-# FORM — 3 COLUMNS
+# 2 COLUMNS LAYOUT
 # ============================================================
 
-col1, col2, col3 = st.columns(3)
+col1, col2 = st.columns(2)
 
-# ---------- Column 1: Direct Materials + Labour + Expenses ----------
+# ============================================================
+# COLUMN 1 — DIRECT MATERIALS, LABOUR, EXPENSES
+# ============================================================
+
 with col1:
-    st.markdown(
-        f"""
-        <h3 style="color: #c2185b; font-size: 1.15rem; 
-                   border-bottom: 2px solid #f093fb; padding-bottom: 0.3rem;">
-            {'၁။ တိုက်ရိုက် ကုန်ကြမ်းများ' if st.session_state.get('language', 'my') == 'my' else '1. Direct Materials'}
-        </h3>
-        """,
-        unsafe_allow_html=True,
-    )
-    dm_opening = number_input("အဖွင့် ကုန်ကြမ်းလက်ကျန်" if st.session_state.get("language") == "my" else "Opening Stock (Raw)", "opening_stock_raw")
-    dm_purchases = number_input("ကုန်ကြမ်းဝယ်ယူမှု" if st.session_state.get("language") == "my" else "Purchases (Raw)", "purchases_raw")
-    dm_carriage = number_input("သယ်ယူပို့ဆောင်ခ" if st.session_state.get("language") == "my" else "Carriage Inward", "carriage_inward")
-    dm_customs = number_input("အကောက်ခွန်" if st.session_state.get("language") == "my" else "Customs Duty", "customs_duty")
-    dm_closing = number_input("အပိတ် ကုန်ကြမ်းလက်ကျန်" if st.session_state.get("language") == "my" else "Closing Stock (Raw)", "closing_stock_raw", is_deduction=True)
-
-    cost_of_materials = dm_opening + dm_purchases + dm_carriage + dm_customs - dm_closing
-    st.markdown(
-        f"""
-        <div style="background-color: #fce4ec; padding: 0.6rem; border-radius: 6px; margin-top: 0.5rem;">
-            <span style="color: #c2185b; font-weight: bold;">{'အသုံးပြုသော ကုန်ကြမ်းကုန်ကျစရိတ်' if st.session_state.get('language', 'my') == 'my' else 'Cost of Materials Used'}:</span>
-            <span style="float: right; font-weight: bold; color: #c2185b;">
-                {format_number(cost_of_materials)}
-            </span>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
+    # 1. Direct Materials
+    st.markdown(f'<h3 style="color: #1976d2; font-size: 1.15rem; border-bottom: 2px solid #4facfe; padding-bottom: 0.3rem;">{"၁။ တိုက်ရိုက် ကုန်ကြမ်းများ" if st.session_state.get("language") == "my" else "1. Direct Materials"}</h3>', unsafe_allow_html=True)
+    dm_opening = mfg_num_input("အဖွင့် ကုန်ကြမ်းလက်ကျန်", "opening_stock_raw", state_key="mfg_show_dm")
+    dm_purchases = mfg_num_input("ကုန်ကြမ်းဝယ်ယူမှု", "purchases_raw", state_key="mfg_show_dm")
+    dm_carriage = mfg_num_input("သယ်ယူပို့ဆောင်ခ", "carriage_inward", state_key="mfg_show_dm")
+    dm_customs = mfg_num_input("အကောက်ခွန်", "customs_duty", state_key="mfg_show_dm")
+    dm_closing = mfg_num_input("အပိတ် ကုန်ကြမ်းလက်ကျန်", "closing_stock_raw", is_deduction=True, state_key="mfg_show_dm")
+    
+    custom_dm_total = render_mfg_custom_items("direct_materials", "Custom Direct Materials")
+    total_dm = dm_opening + dm_purchases + dm_carriage + dm_customs - dm_closing + custom_dm_total
+    subtotal_box("အသုံးပြုသော ကုန်ကြမ်းကုန်ကျစရိတ်", total_dm, "#1976d2")
     st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown(
-        f"""
-        <h3 style="color: #c2185b; font-size: 1.15rem; 
-                   border-bottom: 2px solid #f093fb; padding-bottom: 0.3rem;">
-            {'၂။ တိုက်ရိုက် အလုပ်သမားခ' if st.session_state.get('language', 'my') == 'my' else '2. Direct Labour'}
-        </h3>
-        """,
-        unsafe_allow_html=True,
-    )
-    dl_direct = number_input("တိုက်ရိုက် အလုပ်သမားခ" if st.session_state.get("language") == "my" else "Direct Wages", "wages_direct")
-    dl_overtime = number_input("အချိန်ပို အလုပ်သမားခ" if st.session_state.get("language") == "my" else "Overtime Wages", "wages_overtime")
-    dl_contract = number_input("စာချုပ် အလုပ်သမားခ" if st.session_state.get("language") == "my" else "Contract Wages", "wages_contract")
 
-    direct_labour_total = dl_direct + dl_overtime + dl_contract
-    st.markdown(
-        f"""
-        <div style="background-color: #fce4ec; padding: 0.6rem; border-radius: 6px; margin-top: 0.5rem;">
-            <span style="color: #c2185b; font-weight: bold;">{'အလုပ်သမားခ စုစုပေါင်း' if st.session_state.get('language', 'my') == 'my' else 'Total Direct Labour'}:</span>
-            <span style="float: right; font-weight: bold; color: #c2185b;">
-                {format_number(direct_labour_total)}
-            </span>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
+    # 2. Direct Labour
+    st.markdown(f'<h3 style="color: #1976d2; font-size: 1.15rem; border-bottom: 2px solid #4facfe; padding-bottom: 0.3rem;">{"၂။ တိုက်ရိုက် အလုပ်သမားခ" if st.session_state.get("language") == "my" else "2. Direct Labour"}</h3>', unsafe_allow_html=True)
+    dl_wages = mfg_num_input("တိုက်ရိုက် အလုပ်သမားခ", "wages_direct", state_key="mfg_show_dl")
+    dl_ot = mfg_num_input("အချိန်ပို အလုပ်သမားခ", "wages_overtime", state_key="mfg_show_dl")
+    dl_contract = mfg_num_input("စာချုပ် အလုပ်သမားခ", "wages_contract", state_key="mfg_show_dl")
+    
+    custom_dl_total = render_mfg_custom_items("direct_labour", "Custom Direct Labour")
+    total_dl = dl_wages + dl_ot + dl_contract + custom_dl_total
+    subtotal_box("တိုက်ရိုက် အလုပ်သမားခ စုစုပေါင်း", total_dl, "#1976d2")
     st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown(
-        f"""
-        <h3 style="color: #c2185b; font-size: 1.15rem; 
-                   border-bottom: 2px solid #f093fb; padding-bottom: 0.3rem;">
-            {'၃။ တိုက်ရိုက် အသုံးစရိတ်များ' if st.session_state.get('language', 'my') == 'my' else '3. Direct Expenses'}
-        </h3>
-        """,
-        unsafe_allow_html=True,
-    )
-    de_royalty = number_input("မူပိုင်ခွင့်ကြေး" if st.session_state.get("language") == "my" else "Royalty", "royalty")
-    de_hire = number_input("စက်ပစ္စည်း ငှားရမ်းခ" if st.session_state.get("language") == "my" else "Hire of Plant", "hire_plant")
-    de_fuel = number_input("လောင်စာနှင့် လျှပ်စစ်" if st.session_state.get("language") == "my" else "Fuel & Power", "fuel_power_direct")
 
-    direct_expenses_total = de_royalty + de_hire + de_fuel
-    st.markdown(
-        f"""
-        <div style="background-color: #fce4ec; padding: 0.6rem; border-radius: 6px; margin-top: 0.5rem;">
-            <span style="color: #c2185b; font-weight: bold;">{'တိုက်ရိုက် အသုံးစရိတ် စုစုပေါင်း' if st.session_state.get('language', 'my') == 'my' else 'Total Direct Expenses'}:</span>
-            <span style="float: right; font-weight: bold; color: #c2185b;">
-                {format_number(direct_expenses_total)}
-            </span>
+    # 3. Direct Expenses
+    st.markdown(f'<h3 style="color: #1976d2; font-size: 1.15rem; border-bottom: 2px solid #4facfe; padding-bottom: 0.3rem;">{"၃။ တိုက်ရိုက် အသုံးစရိတ်များ" if st.session_state.get("language") == "my" else "3. Direct Expenses"}</h3>', unsafe_allow_html=True)
+    de_royalty = mfg_num_input("မူပိုင်ခွင့်ကြေး", "royalty", state_key="mfg_show_de")
+    de_hire = mfg_num_input("စက်ပစ္စည်း ငှားရမ်းခ", "hire_plant", state_key="mfg_show_de")
+    de_fuel = mfg_num_input("လောင်စာနှင့် လျှပ်စစ်", "fuel_power_direct", state_key="mfg_show_de")
+    
+    custom_de_total = render_mfg_custom_items("direct_expenses", "Custom Direct Expenses")
+    total_de = de_royalty + de_hire + de_fuel + custom_de_total
+    subtotal_box("တိုက်ရိုက် အသုံးစရိတ် စုစုပေါင်း", total_de, "#1976d2")
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Prime Cost
+    prime_cost = total_dm + total_dl + total_de
+    st.markdown(f"""
+        <div style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); padding: 1.2rem; border-radius: 12px; color: white; margin-top: 1rem;">
+            <p style="margin: 0; font-size: 1rem; opacity: 0.95;">💵 {'အခြေခံ ကုန်ကျစရိတ် (Prime Cost)' if st.session_state.get('language') == 'my' else 'Prime Cost'}</p>
+            <h1 style="margin: 0.4rem 0 0 0; font-size: 1.8rem;">{format_number(prime_cost)}</h1>
         </div>
-        """,
-        unsafe_allow_html=True,
-    )
+        """, unsafe_allow_html=True)
 
-# ---------- Column 2: Factory Overhead ----------
+# ============================================================
+# COLUMN 2 — FACTORY OVERHEAD + WIP + PRODUCTION COST
+# ============================================================
+
 with col2:
-    st.markdown(
-        f"""
-        <h3 style="color: #1976d2; font-size: 1.15rem; 
-                   border-bottom: 2px solid #4facfe; padding-bottom: 0.3rem;">
-            {'၄။ စက်ရုံ အသုံးစရိတ်များ' if st.session_state.get('language', 'my') == 'my' else '4. Factory Overhead'}
-        </h3>
-        """,
-        unsafe_allow_html=True,
-    )
-    fo_rent = number_input("စက်ရုံ ငှားရမ်းခ" if st.session_state.get("language") == "my" else "Factory Rent", "factory_rent")
-    fo_rates = number_input("စက်ရုံ အခွန်" if st.session_state.get("language") == "my" else "Factory Rates", "factory_rates")
-    fo_insurance = number_input("စက်ရုံ အာမခံ" if st.session_state.get("language") == "my" else "Factory Insurance", "factory_insurance")
-    fo_power = number_input("စက်ရုံ လျှပ်စစ်" if st.session_state.get("language") == "my" else "Factory Power", "factory_power")
-    fo_salary = number_input("စက်ရုံ ဝန်ထမ်းခ" if st.session_state.get("language") == "my" else "Factory Salary", "factory_salary")
-    fo_depr = number_input("စက်ပစ္စည်း တန်ဖိုးကျဆင်း" if st.session_state.get("language") == "my" else "Depreciation - Plant", "depreciation_plant")
-    fo_repairs = number_input("စက်ပစ္စည်း ပြုပြင်ခ" if st.session_state.get("language") == "my" else "Repairs - Plant", "repairs_plant")
-    fo_indirect = number_input("သွယ်ဝိုက် အလုပ်သမားခ" if st.session_state.get("language") == "my" else "Indirect Wages", "indirect_wages")
-    fo_misc = number_input("အထွေထွေ စက်ရုံစရိတ်" if st.session_state.get("language") == "my" else "Misc Factory Exp", "factory_misc")
-
-    factory_overhead_total = (
-        fo_rent + fo_rates + fo_insurance + fo_power + fo_salary +
-        fo_depr + fo_repairs + fo_indirect + fo_misc
-    )
-    st.markdown(
-        f"""
-        <div style="background-color: #e3f2fd; padding: 0.6rem; border-radius: 6px; margin-top: 0.5rem;">
-            <span style="color: #1976d2; font-weight: bold;">{'စက်ရုံ စုစုပေါင်း' if st.session_state.get('language', 'my') == 'my' else 'Total Factory Overhead'}:</span>
-            <span style="float: right; font-weight: bold; color: #1976d2;">
-                {format_number(factory_overhead_total)}
-            </span>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
+    # 4. Factory Overhead
+    st.markdown(f'<h3 style="color: #c2185b; font-size: 1.15rem; border-bottom: 2px solid #f093fb; padding-bottom: 0.3rem;">{"၄။ စက်ရုံ အသုံးစရိတ်များ" if st.session_state.get("language") == "my" else "4. Factory Overhead"}</h3>', unsafe_allow_html=True)
+    fo_rent = mfg_num_input("စက်ရုံ ငှားရမ်းခ", "factory_rent", state_key="mfg_show_fo")
+    fo_rates = mfg_num_input("စက်ရုံ အခွန်", "factory_rates", state_key="mfg_show_fo")
+    fo_ins = mfg_num_input("စက်ရုံ အာမခံ", "factory_insurance", state_key="mfg_show_fo")
+    fo_power = mfg_num_input("စက်ရုံ လျှပ်စစ်", "factory_power", state_key="mfg_show_fo")
+    fo_salary = mfg_num_input("စက်ရုံ ဝန်ထမ်းခ", "factory_salary", state_key="mfg_show_fo")
+    fo_dep = mfg_num_input("စက်ပစ္စည်း တန်ဖိုးကျဆင်း", "depreciation_plant", state_key="mfg_show_fo")
+    fo_repairs = mfg_num_input("စက်ပစ္စည်း ပြုပြင်ခ", "repairs_plant", state_key="mfg_show_fo")
+    fo_indirect = mfg_num_input("သွယ်ဝိုက် အလုပ်သမားခ", "indirect_wages", state_key="mfg_show_fo")
+    fo_misc = mfg_num_input("အထွေထွေ စက်ရုံစရိတ်", "factory_misc", state_key="mfg_show_fo")
+    
+    custom_fo_total = render_mfg_custom_items("factory_overhead", "Custom Factory Overhead")
+    total_fo = fo_rent + fo_rates + fo_ins + fo_power + fo_salary + fo_dep + fo_repairs + fo_indirect + fo_misc + custom_fo_total
+    subtotal_box("စက်ရုံ အသုံးစရိတ် စုစုပေါင်း", total_fo, "#c2185b")
     st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown(
-        f"""
-        <h3 style="color: #1976d2; font-size: 1.15rem; 
-                   border-bottom: 2px solid #4facfe; padding-bottom: 0.3rem;">
-            {'၅။ လုပ်ငန်း ဆောင်ရွက်ဆဲ (WIP)' if st.session_state.get('language', 'my') == 'my' else '5. Work in Progress'}
-        </h3>
-        """,
-        unsafe_allow_html=True,
-    )
-    wip_opening = number_input("အဖွင့် WIP" if st.session_state.get("language") == "my" else "Opening WIP", "add_opening_wip")
-    wip_closing = number_input("အပိတ် WIP" if st.session_state.get("language") == "my" else "Closing WIP", "less_closing_wip", is_deduction=True)
 
-# ---------- Column 3: LIVE CALCULATION ----------
-with col3:
-    prime_cost = cost_of_materials + direct_labour_total + direct_expenses_total
-    production_cost = prime_cost + factory_overhead_total + wip_opening - wip_closing
+    # 5. WIP
+    st.markdown(f'<h3 style="color: #c2185b; font-size: 1.15rem; border-bottom: 2px solid #f093fb; padding-bottom: 0.3rem;">{"၅။ လုပ်ငန်း ဆောင်ရွက်ဆဲ (WIP)" if st.session_state.get("language") == "my" else "5. Work in Progress"}</h3>', unsafe_allow_html=True)
+    wip_opening = mfg_num_input("အဖွင့် WIP", "add_opening_wip", state_key="mfg_show_wip")
+    wip_closing = mfg_num_input("အပိတ် WIP", "less_closing_wip", is_deduction=True, state_key="mfg_show_wip")
+    
+    subtotal_box("WIP ပြောင်းလဲမှု", wip_opening - wip_closing, "#c2185b")
+    st.markdown("<br>", unsafe_allow_html=True)
 
-    # Prime Cost card
-    st.markdown(
-        f"""
-        <div style="
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-            padding: 1.2rem;
-            border-radius: 12px;
-            color: white;
-            margin-bottom: 1rem;
-        ">
-            <p style="margin: 0; font-size: 0.9rem; opacity: 0.9;">
-                ⭐ {'အခြေခံ ကုန်ကျစရိတ်' if st.session_state.get('language', 'my') == 'my' else 'Prime Cost'}
-            </p>
-            <h2 style="margin: 0.3rem 0 0 0; font-size: 1.6rem;">
-                {format_number(prime_cost)}
-            </h2>
+    # Production Cost
+    production_cost = prime_cost + total_fo + wip_opening - wip_closing
+    st.markdown(f"""
+        <div style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); padding: 1.5rem; border-radius: 12px; color: white; margin-top: 1rem;">
+            <p style="margin: 0; font-size: 1rem; opacity: 0.95;">🎯 {'ကုန်ထုတ်လုပ်မှု ကုန်ကျစရိတ် (Production Cost)' if st.session_state.get('language') == 'my' else 'Production Cost'}</p>
+            <h1 style="margin: 0.5rem 0 0 0; font-size: 2.2rem;">{format_number(production_cost)}</h1>
         </div>
-        """,
-        unsafe_allow_html=True,
-    )
+        """, unsafe_allow_html=True)
 
-    # Production Cost card
-    st.markdown(
-        f"""
-        <div style="
-            background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
-            padding: 1.5rem;
-            border-radius: 12px;
-            color: white;
-            margin-bottom: 1rem;
-        ">
-            <p style="margin: 0; font-size: 1rem; opacity: 0.95;">
-                🎯 {'ကုန်ထုတ်လုပ်မှု ကုန်ကျစရိတ်' if st.session_state.get('language', 'my') == 'my' else 'Production Cost'}
-            </p>
-            <h1 style="margin: 0.5rem 0 0 0; font-size: 2.2rem;">
-                {format_number(production_cost)}
-            </h1>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    # Breakdown
-    st.markdown(
-        f"""
-        <div style="background-color: #f5f5f5; padding: 1rem; border-radius: 8px;">
-            <p style="margin: 0 0 0.5rem 0; font-size: 0.85rem; color: #666; font-weight: bold;">
-                📊 {'အသေးစိတ်' if st.session_state.get('language', 'my') == 'my' else 'Breakdown'}
-            </p>
-            <table style="width: 100%; font-size: 0.9rem;">
-                <tr>
-                    <td>{'ကုန်ကြမ်း' if st.session_state.get('language', 'my') == 'my' else 'Materials'}</td>
-                    <td style="text-align: right; font-weight: bold;">{format_number(cost_of_materials)}</td>
-                </tr>
-                <tr>
-                    <td>{'အလုပ်သမားခ' if st.session_state.get('language', 'my') == 'my' else 'Labour'}</td>
-                    <td style="text-align: right; font-weight: bold;">{format_number(direct_labour_total)}</td>
-                </tr>
-                <tr>
-                    <td>{'တိုက်ရိုက် စရိတ်' if st.session_state.get('language', 'my') == 'my' else 'Direct Exp'}</td>
-                    <td style="text-align: right; font-weight: bold;">{format_number(direct_expenses_total)}</td>
-                </tr>
-                <tr style="border-top: 1px solid #ddd;">
-                    <td><b>Prime Cost</b></td>
-                    <td style="text-align: right; font-weight: bold; color: #f5576c;">
-                        {format_number(prime_cost)}
-                    </td>
-                </tr>
-                <tr>
-                    <td>{'စက်ရုံ စရိတ်' if st.session_state.get('language', 'my') == 'my' else 'Factory Overhead'}</td>
-                    <td style="text-align: right; font-weight: bold;">{format_number(factory_overhead_total)}</td>
-                </tr>
-                <tr>
-                    <td>WIP (net)</td>
-                    <td style="text-align: right; font-weight: bold;">{format_number(wip_opening - wip_closing)}</td>
-                </tr>
-                <tr style="border-top: 2px solid #38f9d7;">
-                    <td><b>Production Cost</b></td>
-                    <td style="text-align: right; font-weight: bold; color: #38a169; font-size: 1.05rem;">
-                        {format_number(production_cost)}
-                    </td>
-                </tr>
-            </table>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    # နောက်စာမျက်နှာတွေအတွက် သိမ်းထားမယ်
+    st.session_state.mfg_data["_production_cost"] = production_cost
+    st.session_state.mfg_data["_total_dm"] = total_dm
+    st.session_state.mfg_data["_total_dl"] = total_dl
+    st.session_state.mfg_data["_total_de"] = total_de
+    st.session_state.mfg_data["_total_fo"] = total_fo
 
 # ============================================================
 # ACTION BUTTONS
@@ -434,28 +386,31 @@ col1, col2, col3, col4 = st.columns(4)
 with col1:
     if st.button(t('save'), use_container_width=True, type="primary"):
         try:
-            st.session_state.mfg_data["_production_cost"] = production_cost
             data_json = json.dumps(st.session_state.mfg_data, ensure_ascii=False)
             db.save_statement(
                 client_id=client_id,
                 statement_type="manufacturing",
                 period_end=st.session_state.mfg_period,
                 data_json=data_json,
+                custom_data=st.session_state.mfg_custom_data,
             )
             st.success("✓ သိမ်းပြီးပါပြီ" if st.session_state.get("language") == "my" else "✓ Saved successfully")
             st.balloons()
         except Exception as e:
-            st.error(f"❌ Error: {e}")
+            st.error(f"❌ Save Error: {e}")
 
 with col2:
     if st.button("📄 PDF", use_container_width=True):
         try:
+            pdf_data = dict(st.session_state.mfg_data)
+            pdf_data["custom_data"] = st.session_state.mfg_custom_data
+            
             pdf_bytes = generate_pdf(
                 statement_type="manufacturing",
                 client_name=client["name"],
-                data=st.session_state.mfg_data,
+                data=pdf_data,
                 period_end=st.session_state.mfg_period,
-                lang=st.session_state.language,  # ⭐ Lang ထည့်ပြီး
+                lang=st.session_state.language,
             )
             st.download_button(
                 "⬇️ PDF Download",
@@ -470,6 +425,12 @@ with col2:
 with col3:
     if st.button("🔄 Reset", use_container_width=True):
         st.session_state.mfg_data = {}
+        st.session_state.mfg_custom_data = {
+            "direct_materials": [], 
+            "direct_labour": [], 
+            "direct_expenses": [], 
+            "factory_overhead": []
+        }
         st.rerun()
 
 with col4:
