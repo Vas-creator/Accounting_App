@@ -2,6 +2,8 @@
 import streamlit as st
 from st_supabase_connection import SupabaseConnection
 import json
+import os
+from datetime import datetime
 
 # ============================================================
 # SUPABASE CONNECTION
@@ -234,3 +236,122 @@ def save_statement(client_id: int, statement_type: str,
     except Exception as e:
         print(f"Save statement error: {e}")
         raise e
+
+# ============================================================
+# BACKUP & RESTORE
+# ============================================================
+
+def get_all_data_for_backup() -> dict:
+    """ဒေတာအားလုံးကို Backup အတွက် ဆွဲထုတ်ခြင်း"""
+    conn = get_supabase()
+    
+    backup = {
+        "clients": [],
+        "manufacturing": [],
+        "trading_pl": [],
+        "balance_sheet": [],
+        "cash_flow": [],
+    }
+    
+    for table in backup.keys():
+        try:
+            res = conn.table(table).select("*").execute()
+            backup[table] = res.data or []
+        except Exception as e:
+            print(f"Backup error for {table}: {e}")
+    
+    return backup
+
+
+def restore_from_backup(backup_data: dict) -> bool:
+    """Backup ဖိုင်မှ ဒေတာများ ပြန်လည်သွင်းယူခြင်း"""
+    conn = get_supabase()
+    
+    # ရှိပြီးသား ဒေတာတွေကို အရင်ရှင်းမယ် (လိုအပ်ရင်)
+    # ... (ဒီအပိုင်းကို သတိထားရပါမယ်၊ ဒေတာဟောင်းတွေ အကုန်ပျက်သွားနိုင်လို့ပါ)
+    
+    # ဒါပေမယ့် လက်ရှိမှာတော့ Backup ထဲက ဒေတာတွေကိုပဲ ထပ်ဖြည့်သွားမယ်
+    # (Duplicate ဖြစ်နိုင်တဲ့အတွက် သတိထားပါ)
+    
+    try:
+        for table, records in backup_data.items():
+            if not records:
+                continue
+            
+            # ဒီနေရာမှာ သေချာစဉ်းစားဖို့ လိုပါတယ်
+            # ဥပမာ - client_id တူတာတွေ ရှိရင် ဘယ်လိုလုပ်မလဲ?
+            
+            # လောလောဆယ် ရိုးရှင်းအောင် ဒေတာအသစ်တွေကိုပဲ ထည့်မယ်
+            # (ဒါပေမယ့် ဒါက အန္တရာယ်ရှိနိုင်တဲ့အတွက် သေချာစဉ်းစားပါ)
+            
+            # အကောင်းဆုံးက ဒေတာဟောင်းကို မဖျက်ဘဲ ဒေတာအသစ်ကို သီးသန့်သိမ်းတာပါ
+            pass
+        
+        return True
+    except Exception as e:
+        print(f"Restore error: {e}")
+        return False
+
+def restore_from_backup(backup_data: dict) -> bool:
+    """Backup ဖိုင်မှ ဒေတာများ ပြန်လည်သွင်းယူခြင်း"""
+    conn = get_supabase()
+    
+    try:
+        # ⭐ ဒေတာဟောင်းတွေ အကုန်ရှင်းမယ် (ဒါပေမယ့် သတိထားရပါမယ်)
+        # လက်ရှိ ဒေတာတွေကို မဖျက်ချင်ရင် ဒီအပိုင်းကို ဖျက်ပါ။
+        for table in ["cash_flow", "balance_sheet", "trading_pl", "manufacturing", "clients"]:
+            try:
+                conn.table(table).delete().neq("id", 0).execute()
+            except Exception as e:
+                print(f"Delete error for {table}: {e}")
+        
+        # ⭐ Backup ထဲက ဒေတာတွေ ပြန်ထည့်မယ်
+        for table, records in backup_data.items():
+            if not records or not isinstance(records, list):
+                continue
+            
+            # ဒေတာတွေကို Batch လုပ်ပြီး ထည့်မယ်
+            try:
+                conn.table(table).insert(records).execute()
+            except Exception as e:
+                print(f"Insert error for {table}: {e}")
+                # တစ်ခုချင်း ထည့်ကြည့်မယ် (Batch မရရင်)
+                for record in records:
+                    try:
+                        conn.table(table).insert(record).execute()
+                    except Exception as inner_e:
+                        print(f"Individual insert error: {inner_e}")
+        
+        return True
+    except Exception as e:
+        print(f"Restore error: {e}")
+        return False
+
+
+def auto_backup_to_file() -> bool:
+    """ဒေတာများကို ဖိုင်အနေဖြင့် အလိုအလျောက် သိမ်းဆည်းခြင်း"""
+    try:
+        backup_data = get_all_data_for_backup()
+        
+        # Backup Folder မရှိရင် ဖန်တီးမယ်
+        backup_dir = "backups"
+        if not os.path.exists(backup_dir):
+            os.makedirs(backup_dir)
+        
+        # ဖိုင်နာမည်မှာ ရက်စွဲထည့်မယ်
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filepath = os.path.join(backup_dir, f"auto_backup_{timestamp}.json")
+        
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(backup_data, f, ensure_ascii=False, indent=2)
+        
+        # သက်တမ်းအရင့်ဆုံး ဖိုင်တွေကို ရှင်းမယ် (ဥပမာ - ၅ ခုထက် ပိုမသိမ်းဘူး)
+        files = sorted([os.path.join(backup_dir, f) for f in os.listdir(backup_dir) if f.endswith(".json")])
+        if len(files) > 5:
+            for old_file in files[:-5]:
+                os.remove(old_file)
+                
+        return True
+    except Exception as e:
+        print(f"Auto backup error: {e}")
+        return False

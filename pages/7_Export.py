@@ -1,6 +1,6 @@
 # pages/7_Export.py
 """
-Export — ၄ ခုလုံး Financial Statements PDF တစ်ခါတည်း ထုတ်ယူခြင်း
+Export — ၄ ခုလုံး Financial Statements PDF & Excel တစ်ခါတည်း ထုတ်ယူခြင်း
 """
 
 import streamlit as st
@@ -8,6 +8,8 @@ import json
 import zipfile
 import io
 from datetime import date
+import pandas as pd
+import re
 
 from core import db
 from core.utils import format_date_mm, format_number, info_box
@@ -54,7 +56,6 @@ if not client:
 # ============================================================
 
 def safe_json_loads(data):
-    """String ဖြစ်ရင် ဖြည်မယ်၊ Dict ဖြစ်ရင် ဒီအတိုင်းယူမယ်"""
     if isinstance(data, str):
         try:
             return json.loads(data)
@@ -68,7 +69,6 @@ def safe_json_loads(data):
 # LOAD ALL STATEMENTS
 # ============================================================
 
-# ⭐ ဖောက်သည်ပြောင်းသွားရင် ဒေတာဟောင်းတွေ မလာအောင် ရှင်းမယ်
 if st.session_state.get("current_export_client_id") != client_id:
     st.session_state.current_export_client_id = client_id
     if "show_individual" in st.session_state:
@@ -85,7 +85,6 @@ for key in statements.keys():
     try:
         existing = db.get_statement(client_id, key)
         if existing and existing.get("data"):
-            # ⭐ Error မတက်အောင် safe_json_loads ကို သုံးမယ်
             statements[key]["data"] = safe_json_loads(existing["data"])
             statements[key]["period"] = existing.get("period_end", "") or existing.get("as_at_date", "")
     except Exception as e:
@@ -215,7 +214,7 @@ st.divider()
 st.markdown(
     f"""
     <h3 style="color: #1f4788; font-size: 1.3rem;">
-        📄 {'PDF ထုတ်ယူရန် ရွေးချယ်ပါ' if st.session_state.get('language', 'my') == 'my' else 'Choose PDF Export Option'}
+        📄 {'ထုတ်ယူရန် ရွေးချယ်ပါ' if st.session_state.get('language', 'my') == 'my' else 'Choose Export Option'}
     </h3>
     """,
     unsafe_allow_html=True,
@@ -271,11 +270,11 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-col1, col2 = st.columns(2)
+col1, col2, col3 = st.columns(3)
 
 with col1:
     if st.button(
-        "📦 အားလုံး ထုတ်ယူ (ZIP)" if st.session_state.get("language") == "my" else "📦 Export All (ZIP)",
+        "📦 အားလုံး PDF (ZIP)" if st.session_state.get("language") == "my" else "📦 Export All (PDF Zip)",
         use_container_width=True,
         type="primary",
         disabled=(available_count == 0),
@@ -327,7 +326,65 @@ with col1:
 
 with col2:
     if st.button(
-        "📄 တစ်ခုချင်း ထုတ်ယူ" if st.session_state.get("language") == "my" else "📄 Export Individual",
+        "📊 Excel (xlsx) ထုတ်ယူ" if st.session_state.get("language") == "my" else "📊 Export Excel (xlsx)",
+        use_container_width=True,
+        disabled=(available_count == 0),
+        key="export_excel_btn"
+    ):
+        try:
+            excel_buffer = io.BytesIO()
+            
+            with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                for key, stmt in statements.items():
+                    if stmt["data"] is None:
+                        continue
+                    
+                    data = stmt["data"]
+                    rows = []
+                    
+                    # ဒေတာတွေကို Row တစ်ခုချင်းစီ အဖြစ် ပြောင်းမယ်
+                    for k, v in data.items():
+                        if k.startswith("_"): # အတွင်းကျ Key တွေကို ကျော်မယ်
+                            continue
+                        
+                        label = k.replace("_", " ").title()
+                        val = v
+                        if isinstance(val, (int, float)):
+                            val = format_number(val) # ကော်မာနဲ့ ပြမယ်
+                        elif isinstance(val, str):
+                            try:
+                                val = format_number(float(val))
+                            except:
+                                pass
+                        
+                        rows.append({"Item": label, "Value": val})
+                    
+                    df = pd.DataFrame(rows)
+                    
+                    # ⭐ Sheet နာမည်မှာ သုံးလို့မရတဲ့ သင်္ကေတတွေကို ဖယ်ရှားမယ်
+                    raw_sheet_name = stmt["label_en"][:31]
+                    safe_sheet_name = re.sub(r'[\\/*?:\[\]]', '', raw_sheet_name)
+                    sheet_name = safe_sheet_name.strip()
+                    
+                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+
+            excel_bytes = excel_buffer.getvalue()
+
+            st.download_button(
+                "⬇️ Excel ရယူရန်" if st.session_state.get("language") == "my" else "⬇️ Download Excel",
+                data=excel_bytes,
+                file_name=f"{client['name'].replace(' ', '_')}_FinancialStatements.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                key="download_excel_btn"
+            )
+            st.success("✓ Excel ဖိုင်ဖန်တီးပြီး" if st.session_state.get("language") == "my" else "✓ Excel created")
+        except Exception as e:
+            st.error(f"❌ Excel Error: {e}")
+
+with col3:
+    if st.button(
+        "📄 တစ်ခုချင်း PDF ထုတ်ယူ" if st.session_state.get("language") == "my" else "📄 Export Individual PDF",
         use_container_width=True,
         disabled=(available_count == 0),
         key="export_indiv_btn"
