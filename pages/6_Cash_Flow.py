@@ -249,6 +249,10 @@ defaults = {
     "opening_payable": 0,
     "opening_fixed_assets": 0,
     "opening_loan": 0,
+    "opening_deposits": 0,
+    "opening_prepayments": 0,
+    "opening_other_assets": 0,
+    "opening_deferred": 0,
     "net_profit": int(auto_net_profit),
     "depreciation": int(auto_depreciation),
     "amortization": 0,
@@ -373,7 +377,6 @@ with col2:
     opening_inv = st.number_input(
         "အဖွင့် Inventories" if st.session_state.get("language") == "my" else "Opening Inventories",
         value=int(cf.get("opening_inventories", 0)),
-        min_value=0,
         step=1000,
         format="%d",
         key="cf_opening_inv",
@@ -383,7 +386,6 @@ with col2:
     opening_rec = st.number_input(
         "အဖွင့် A/C Receivable" if st.session_state.get("language") == "my" else "Opening A/C Receivable",
         value=int(cf.get("opening_receivable", 0)),
-        min_value=0,
         step=1000,
         format="%d",
         key="cf_opening_rec",
@@ -393,24 +395,67 @@ with col2:
     opening_pay = st.number_input(
         "အဖွင့် Creditors/A/P" if st.session_state.get("language") == "my" else "Opening Creditors/A/P",
         value=int(cf.get("opening_payable", 0)),
-        min_value=0,
         step=1000,
         format="%d",
         key="cf_opening_pay",
     )
     cf["opening_payable"] = opening_pay
 
+    opening_deposits = st.number_input(
+        "အဖွင့် Deposits" if st.session_state.get("language") == "my" else "Opening Deposits",
+        value=int(cf.get("opening_deposits", 0)),
+        step=1000,
+        format="%d",
+        key="cf_opening_deposits",
+    )
+    cf["opening_deposits"] = opening_deposits
+
+    opening_prepayments = st.number_input(
+        "အဖွင့် Prepayments" if st.session_state.get("language") == "my" else "Opening Prepayments",
+        value=int(cf.get("opening_prepayments", 0)),
+        step=1000,
+        format="%d",
+        key="cf_opening_prepayments",
+    )
+    cf["opening_prepayments"] = opening_prepayments
+
+    opening_other_assets = st.number_input(
+        "အဖွင့် Other Assets" if st.session_state.get("language") == "my" else "Opening Other Assets",
+        value=int(cf.get("opening_other_assets", 0)),
+        step=1000,
+        format="%d",
+        key="cf_opening_other_assets",
+    )
+    cf["opening_other_assets"] = opening_other_assets
+
+    opening_deferred = st.number_input(
+        "အဖွင့် Deferred Expenses" if st.session_state.get("language") == "my" else "Opening Deferred Expenses",
+        value=int(cf.get("opening_deferred", 0)),
+        step=1000,
+        format="%d",
+        key="cf_opening_deferred",
+    )
+    cf["opening_deferred"] = opening_deferred
+
     closing_inv = float(auto_bs.get("ca_inventories", 0))
     closing_rec = float(auto_bs.get("ca_receivable", 0))
     closing_pay = float(auto_bs.get("liab_payable", 0))
+    closing_deposits = float(auto_bs.get("ca_deposits", 0))
+    closing_prepayments = float(auto_bs.get("ca_advance", 0))
+    closing_other_assets = float(auto_bs.get("ca_other", 0))
+    closing_deferred = float(auto_bs.get("ca_deferred", 0))
 
     st.markdown(
         f"""
         <div style="background-color: #f5f5f5; padding: 0.6rem; border-radius: 6px; margin-top: 0.8rem; font-size: 0.85rem;">
             <b>{'အပိတ် (BS မှ auto):' if st.session_state.get('language', 'my') == 'my' else 'Closing (Auto from BS):'}</b><br>
-            {'Inventories' if st.session_state.get('language') == 'en' else 'Inventories'}: {format_number(closing_inv)}<br>
-            {'A/C Receivable' if st.session_state.get('language') == 'en' else 'A/C Receivable'}: {format_number(closing_rec)}<br>
-            {'Creditors/A/P' if st.session_state.get('language') == 'en' else 'Creditors/A/P'}: {format_number(closing_pay)}
+            Inventories: {format_number(closing_inv)}<br>
+            A/C Receivable: {format_number(closing_rec)}<br>
+            Creditors/A/P: {format_number(closing_pay)}<br>
+            Deposits: {format_number(closing_deposits)}<br>
+            Prepayments: {format_number(closing_prepayments)}<br>
+            Other Assets: {format_number(closing_other_assets)}<br>
+            Deferred Expenses: {format_number(closing_deferred)}
         </div>
         """,
         unsafe_allow_html=True,
@@ -419,6 +464,10 @@ with col2:
     inv_change = wc_change("inv", closing_inv, opening_inv, is_asset=True)
     rec_change = wc_change("rec", closing_rec, opening_rec, is_asset=True)
     pay_change = wc_change("pay", closing_pay, opening_pay, is_asset=False)
+    dep_change = wc_change("dep", closing_deposits, opening_deposits, is_asset=True)
+    prep_change = wc_change("prep", closing_prepayments, opening_prepayments, is_asset=True)
+    oth_change = wc_change("oth", closing_other_assets, opening_other_assets, is_asset=True)
+    def_change = wc_change("def", closing_deferred, opening_deferred, is_asset=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -444,13 +493,37 @@ with col2:
                         {format_number(pay_change)}
                     </td>
                 </tr>
+                <tr>
+                    <td>{'Deposits ပြောင်းလဲမှု' if st.session_state.get('language', 'my') == 'my' else 'Deposits change'}</td>
+                    <td style="text-align: right; font-weight: bold; color: {'#c62828' if dep_change < 0 else '#2e7d32'};">
+                        {format_number(dep_change)}
+                    </td>
+                </tr>
+                <tr>
+                    <td>{'Prepayments ပြောင်းလဲမှု' if st.session_state.get('language', 'my') == 'my' else 'Prepayments change'}</td>
+                    <td style="text-align: right; font-weight: bold; color: {'#c62828' if prep_change < 0 else '#2e7d32'};">
+                        {format_number(prep_change)}
+                    </td>
+                </tr>
+                <tr>
+                    <td>{'Other Assets ပြောင်းလဲမှု' if st.session_state.get('language', 'my') == 'my' else 'Other Assets change'}</td>
+                    <td style="text-align: right; font-weight: bold; color: {'#c62828' if oth_change < 0 else '#2e7d32'};">
+                        {format_number(oth_change)}
+                    </td>
+                </tr>
+                <tr>
+                    <td>{'Deferred Expenses ပြောင်းလဲမှု' if st.session_state.get('language', 'my') == 'my' else 'Deferred Expenses change'}</td>
+                    <td style="text-align: right; font-weight: bold; color: {'#c62828' if def_change < 0 else '#2e7d32'};">
+                        {format_number(def_change)}
+                    </td>
+                </tr>
             </table>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    total_wc_change = inv_change + rec_change + pay_change
+    total_wc_change = inv_change + rec_change + pay_change + dep_change + prep_change + oth_change + def_change
 
     st.markdown(
         f"""
@@ -499,7 +572,6 @@ with col3:
     invest_fa = st.number_input(
         "ပုံသေပိုင်ဆိုင်မှု ဝယ်ယူမှု" if st.session_state.get("language") == "my" else "Purchase of Fixed Assets",
         value=int(cf.get("investing_purchase_fa", 0)),
-        min_value=0,
         step=1000,
         format="%d",
         key="cf_invest_fa",
@@ -509,7 +581,6 @@ with col3:
     invest_intangible = st.number_input(
         "မမြင်နိုင်သော ပိုင်ဆိုင်မှု တိုးလာမှု" if st.session_state.get("language") == "my" else "Increase in Intangible Assets",
         value=int(cf.get("investing_intangible", 0)),
-        min_value=0,
         step=1000,
         format="%d",
         key="cf_invest_intangible",
@@ -549,7 +620,6 @@ with col3:
     finance_loan = st.number_input(
         "ချေးငွေ တိုးလာမှု" if st.session_state.get("language") == "my" else "Increase in Loan",
         value=int(cf.get("financing_loan_increase", auto_loan)),
-        min_value=0,
         step=1000,
         format="%d",
         key="cf_finance_loan",
@@ -559,7 +629,6 @@ with col3:
     finance_drawing = st.number_input(
         "ပိုင်ရှင် ထုတ်ယူမှု (Drawing)" if st.session_state.get("language") == "my" else "Drawing",
         value=int(cf.get("financing_drawing", auto_drawing)),
-        min_value=0,
         step=1000,
         format="%d",
         key="cf_finance_drawing",
@@ -567,7 +636,15 @@ with col3:
     )
     cf["financing_drawing"] = finance_drawing
 
-    net_financing = finance_loan - finance_drawing
+    # ⭐ Net Financing ကို ကိုယ်တိုင်ရိုက်ထည့်နိုင်အောင် ပြင်မယ်
+    net_financing = st.number_input(
+        "ငွေကြေးရှာဖွေမှုမှ ငွေသား (Net)" if st.session_state.get("language") == "my" else "Net Cash from Financing",
+        value=int(cf.get("net_financing", finance_loan - finance_drawing)),
+        step=1000,
+        format="%d",
+        key="cf_net_financing",
+    )
+    cf["net_financing"] = net_financing
 
     st.markdown(
         f"""
@@ -590,7 +667,6 @@ with col3:
     opening_cash = st.number_input(
         "ကာလအစ ငွေသား" if st.session_state.get("language") == "my" else "Cash and Equivalents at beginning",
         value=int(cf.get("opening_cash", 0)),
-        min_value=0,
         step=1000,
         format="%d",
         key="cf_opening_cash",
