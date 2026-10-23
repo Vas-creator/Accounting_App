@@ -1,7 +1,7 @@
 # pages/1_Clients.py
 import streamlit as st
 from core import db
-from core.utils import format_date_mm, info_box
+from core.utils import format_date_mm, info_box, clean_html
 from core.translations import t
 
 # ============================================================
@@ -36,6 +36,14 @@ BUSINESS_TYPES = [
     "သယ်ယူပို့ဆောင်ရေး (Transportation)",
     "လက်လီ/လက်ကား (Retail/Wholesale)",
     "အခြား (Others)",
+]
+
+MANUFACTURING_TYPES = [
+    "ဆန်စက် (Rice Mill)",
+    "သစ်စက် (Saw Mill)",
+    "အထည်အလိပ် (Textile)",
+    "အစားအစာ ထုတ်လုပ်မှု (Food Processing)",
+    "အခြား (Other)",
 ]
 
 # ============================================================
@@ -85,8 +93,19 @@ if "delete_confirm_id" not in st.session_state:
 if "search_query" not in st.session_state:
     st.session_state.search_query = ""
 
+# ⭐ Form မလိုတဲ့အတွက် ဒေတာတွေကို သိမ်းထားဖို့ Session State တွေ လိုမယ်
+if "add_business_type" not in st.session_state:
+    st.session_state.add_business_type = ""
+if "add_manufacturing_type" not in st.session_state:
+    st.session_state.add_manufacturing_type = ""
+
+if "edit_business_type" not in st.session_state:
+    st.session_state.edit_business_type = ""
+if "edit_manufacturing_type" not in st.session_state:
+    st.session_state.edit_manufacturing_type = ""
+
 # ============================================================
-# TOP BAR — Search + Add Button (ကော်ဒီနေရာမှာ key ထည့်ပြီး)
+# TOP BAR — Search + Add Button
 # ============================================================
 
 col1, col2, col3 = st.columns([3, 2, 1])
@@ -106,21 +125,122 @@ with col3:
         t('add_client'), 
         use_container_width=True, 
         type="primary",
-        key="add_client_btn_top" # ⭐ key ထည့်ပြီး
+        key="add_client_btn_top"
     ):
         st.session_state.show_add_form = True
         st.session_state.editing_client_id = None
+        st.session_state.add_business_type = ""
+        st.session_state.add_manufacturing_type = ""
+        st.rerun()
 
 # ============================================================
-# ADD CLIENT FORM
+# ADD CLIENT FORM (Without st.form)
 # ============================================================
 
 if st.session_state.show_add_form:
-    with st.form("add_client_form", clear_on_submit=False):
+    st.markdown(
+        f"""
+        <h3 style="color: #1565c0; margin-top: 1rem;">
+            {t('add_client')}
+        </h3>
+        """,
+        unsafe_allow_html=True,
+    )
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        name = st.text_input(
+            t('client_name'),
+            placeholder="ဥပမာ — ရွှေမြို့တော် ကုမ္ပဏီ" if st.session_state.get("language") == "my" else "e.g. — Shwe Myo Taw Co.",
+            key="add_name",
+        )
+        business_name = st.text_input(
+            t('business_name'),
+            placeholder="ဥပမာ — ရွှေမြို့တော် လီမိတက်" if st.session_state.get("language") == "my" else "e.g. — Shwe Myo Taw Ltd.",
+            key="add_business_name",
+        )
+        
+        # ⭐ Business Type ရွေးတာနဲ့ တန်းပြီး အောက်က Manufacturing ကျလာမယ်
+        business_type = st.selectbox(
+            t('business_type'),
+            options=[""] + BUSINESS_TYPES,
+            key="add_business_type_select", # key အသစ်
+        )
+        st.session_state.add_business_type = business_type
+        
+        manufacturing_type = ""
+        if business_type == "ကုန်ထုတ်လုပ်ငန်း (Manufacturing)":
+            manufacturing_type = st.selectbox(
+                "ကုန်ထုတ်လုပ်မှု အမျိုးအစား" if st.session_state.get("language") == "my" else "Manufacturing Type",
+                options=[""] + MANUFACTURING_TYPES,
+                key="add_manufacturing_type_select",
+            )
+            st.session_state.add_manufacturing_type = manufacturing_type
+    
+    with col2:
+        email = st.text_input(
+            t('email'),
+            placeholder="example@email.com",
+            key="add_email",
+        )
+        fiscal_year_end = st.text_input(
+            "ဘဏ္ဍာရေးနှစ် ကုန်ဆုံးရက်" if st.session_state.get("language") == "my" else "Fiscal Year End",
+            value="09-30",
+            placeholder="MM-DD",
+            key="add_fiscal_year_end",
+        )
+        address = st.text_input(
+            t('address'),
+            placeholder="ဥပမာ — ရန်ကုန်မြို့" if st.session_state.get("language") == "my" else "e.g. — Yangon",
+            key="add_address",
+        )
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    col_a, col_b, col_c = st.columns([1, 1, 3])
+    with col_a:
+        if st.button(t('save'), use_container_width=True, type="primary", key="add_save_btn"):
+            if not name or len(name.strip()) < 2:
+                st.error("❌ ဖောက်သည် အမည် ဖြည့်ပါ (အနည်းဆုံး ၂ လုံး)" if st.session_state.get("language") == "my" else "❌ Please enter Client Name (min 2 chars)")
+            else:
+                try:
+                    final_business_type = business_type
+                    if manufacturing_type:
+                        final_business_type = f"{business_type} - {manufacturing_type}"
+
+                    db.create_client(
+                        name=clean_html(name.strip()),
+                        business_name=clean_html(business_name.strip()),
+                        business_type=final_business_type,
+                        email=email.strip(),
+                        address=clean_html(address.strip()),
+                        fiscal_year_end=fiscal_year_end.strip() or "09-30",
+                    )
+                    st.success(f"✓ ဖောက်သည် '{name}' ထည့်ပြီးပါပြီ" if st.session_state.get("language") == "my" else f"✓ Client '{name}' added successfully")
+                    st.session_state.show_add_form = False
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Error: {e}")
+    with col_b:
+        if st.button(t('cancel'), use_container_width=True, key="add_cancel_btn"):
+            st.session_state.show_add_form = False
+            st.rerun()
+    
+    st.divider()
+
+# ============================================================
+# EDIT CLIENT FORM (Without st.form)
+# ============================================================
+
+if st.session_state.editing_client_id is not None:
+    client = db.get_client(st.session_state.editing_client_id)
+    
+    if client:
         st.markdown(
             f"""
-            <h3 style="color: #1565c0; margin-top: 1rem;">
-                {t('add_client')}
+            <h3 style="color: #f57c00; margin-top: 1rem;">
+                {t('edit')} — {clean_html(client['name'])}
             </h3>
             """,
             unsafe_allow_html=True,
@@ -131,165 +251,87 @@ if st.session_state.show_add_form:
         with col1:
             name = st.text_input(
                 t('client_name'),
-                placeholder="ဥပမာ — ရွှေမြို့တော် ကုမ္ပဏီ" if st.session_state.get("language") == "my" else "e.g. — Shwe Myo Taw Co.",
-                key="add_name",
+                value=clean_html(client.get("name", "")),
+                key="edit_name",
             )
             business_name = st.text_input(
                 t('business_name'),
-                placeholder="ဥပမာ — ရွှေမြို့တော် လီမိတက်" if st.session_state.get("language") == "my" else "e.g. — Shwe Myo Taw Ltd.",
-                key="add_business_name",
+                value=clean_html(client.get("business_name", "")) or "",
+                key="edit_business_name",
             )
+            
+            current_type = client.get("business_type", "") or ""
+            base_type = current_type
+            current_mfg_type = ""
+            if " - " in current_type:
+                parts = current_type.split(" - ")
+                base_type = parts[0]
+                current_mfg_type = parts[1] if len(parts) > 1 else ""
+
+            type_index = 0
+            if base_type in BUSINESS_TYPES:
+                type_index = BUSINESS_TYPES.index(base_type) + 1
+            
+            # ⭐ Edit မှာလည်း ရွေးတာနဲ့ တန်းပြမယ်
             business_type = st.selectbox(
                 t('business_type'),
                 options=[""] + BUSINESS_TYPES,
-                key="add_business_type",
+                index=type_index,
+                key="edit_business_type_select",
             )
+            st.session_state.edit_business_type = business_type
+
+            mfg_index = 0
+            if current_mfg_type in MANUFACTURING_TYPES:
+                mfg_index = MANUFACTURING_TYPES.index(current_mfg_type) + 1
+            
+            manufacturing_type = ""
+            if business_type == "ကုန်ထုတ်လုပ်ငန်း (Manufacturing)":
+                manufacturing_type = st.selectbox(
+                    "ကုန်ထုတ်လုပ်မှု အမျိုးအစား" if st.session_state.get("language") == "my" else "Manufacturing Type",
+                    options=[""] + MANUFACTURING_TYPES,
+                    index=mfg_index,
+                    key="edit_manufacturing_type_select",
+                )
+                st.session_state.edit_manufacturing_type = manufacturing_type
         
         with col2:
             email = st.text_input(
                 t('email'),
-                placeholder="example@email.com",
-                key="add_email",
+                value=client.get("email", "") or "",
+                key="edit_email",
             )
             fiscal_year_end = st.text_input(
                 "ဘဏ္ဍာရေးနှစ် ကုန်ဆုံးရက်" if st.session_state.get("language") == "my" else "Fiscal Year End",
-                value="09-30",
-                placeholder="MM-DD",
-                key="add_fiscal_year_end",
+                value=client.get("fiscal_year_end", "09-30") or "09-30",
+                key="edit_fiscal_year_end",
             )
             address = st.text_input(
                 t('address'),
-                placeholder="ဥပမာ — ရန်ကုန်မြို့" if st.session_state.get("language") == "my" else "e.g. — Yangon",
-                key="add_address",
+                value=clean_html(client.get("address", "")) or "",
+                key="edit_address",
             )
         
         st.markdown("<br>", unsafe_allow_html=True)
         
         col_a, col_b, col_c = st.columns([1, 1, 3])
         with col_a:
-            submit = st.form_submit_button(
-                t('save'),
-                use_container_width=True,
-                type="primary",
-            )
-        with col_b:
-            cancel = st.form_submit_button(
-                t('cancel'),
-                use_container_width=True,
-            )
-        
-        if submit:
-            if not name or len(name.strip()) < 2:
-                st.error("❌ ဖောက်သည် အမည် ဖြည့်ပါ (အနည်းဆုံး ၂ လုံး)" if st.session_state.get("language") == "my" else "❌ Please enter Client Name (min 2 chars)")
-            else:
-                try:
-                    client_id = db.create_client(
-                        name=name.strip(),
-                        business_name=business_name.strip(),
-                        business_type=business_type,
-                        email=email.strip(),
-                        address=address.strip(),
-                        fiscal_year_end=fiscal_year_end.strip() or "09-30",
-                    )
-                    st.success(f"✓ ဖောက်သည် '{name}' ထည့်ပြီးပါပြီ" if st.session_state.get("language") == "my" else f"✓ Client '{name}' added successfully")
-                    st.session_state.show_add_form = False
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"❌ Error: {e}")
-        
-        if cancel:
-            st.session_state.show_add_form = False
-            st.rerun()
-    
-    st.divider()
-
-# ============================================================
-# EDIT CLIENT FORM
-# ============================================================
-
-if st.session_state.editing_client_id is not None:
-    client = db.get_client(st.session_state.editing_client_id)
-    
-    if client:
-        with st.form("edit_client_form"):
-            st.markdown(
-                f"""
-                <h3 style="color: #f57c00; margin-top: 1rem;">
-                    {t('edit')} — {client['name']}
-                </h3>
-                """,
-                unsafe_allow_html=True,
-            )
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                name = st.text_input(
-                    t('client_name'),
-                    value=client.get("name", ""),
-                    key="edit_name",
-                )
-                business_name = st.text_input(
-                    t('business_name'),
-                    value=client.get("business_name", "") or "",
-                    key="edit_business_name",
-                )
-                
-                current_type = client.get("business_type", "") or ""
-                type_index = 0
-                if current_type in BUSINESS_TYPES:
-                    type_index = BUSINESS_TYPES.index(current_type) + 1
-                business_type = st.selectbox(
-                    t('business_type'),
-                    options=[""] + BUSINESS_TYPES,
-                    index=type_index,
-                    key="edit_business_type",
-                )
-            
-            with col2:
-                email = st.text_input(
-                    t('email'),
-                    value=client.get("email", "") or "",
-                    key="edit_email",
-                )
-                fiscal_year_end = st.text_input(
-                    "ဘဏ္ဍာရေးနှစ် ကုန်ဆုံးရက်" if st.session_state.get("language") == "my" else "Fiscal Year End",
-                    value=client.get("fiscal_year_end", "09-30") or "09-30",
-                    key="edit_fiscal_year_end",
-                )
-                address = st.text_input(
-                    t('address'),
-                    value=client.get("address", "") or "",
-                    key="edit_address",
-                )
-            
-            st.markdown("<br>", unsafe_allow_html=True)
-            
-            col_a, col_b, col_c = st.columns([1, 1, 3])
-            with col_a:
-                save = st.form_submit_button(
-                    t('save'),
-                    use_container_width=True,
-                    type="primary",
-                )
-            with col_b:
-                cancel = st.form_submit_button(
-                    t('cancel'),
-                    use_container_width=True,
-                )
-            
-            if save:
+            if st.button(t('save'), use_container_width=True, type="primary", key="edit_save_btn"):
                 if not name or len(name.strip()) < 2:
                     st.error("❌ ဖောက်သည် အမည် ဖြည့်ပါ" if st.session_state.get("language") == "my" else "❌ Please enter Client Name")
                 else:
                     try:
+                        final_business_type = business_type
+                        if manufacturing_type:
+                            final_business_type = f"{business_type} - {manufacturing_type}"
+
                         db.update_client(
                             st.session_state.editing_client_id,
-                            name=name.strip(),
-                            business_name=business_name.strip(),
-                            business_type=business_type,
+                            name=clean_html(name.strip()),
+                            business_name=clean_html(business_name.strip()),
+                            business_type=final_business_type,
                             email=email.strip(),
-                            address=address.strip(),
+                            address=clean_html(address.strip()),
                             fiscal_year_end=fiscal_year_end.strip() or "09-30",
                         )
                         st.success("✓ ပြင်ဆင်ပြီးပါပြီ" if st.session_state.get("language") == "my" else "✓ Updated successfully")
@@ -297,8 +339,8 @@ if st.session_state.editing_client_id is not None:
                         st.rerun()
                     except Exception as e:
                         st.error(f"❌ Error: {e}")
-            
-            if cancel:
+        with col_b:
+            if st.button(t('cancel'), use_container_width=True, key="edit_cancel_btn"):
                 st.session_state.editing_client_id = None
                 st.rerun()
         
@@ -377,6 +419,20 @@ if not all_clients:
 
 for client in all_clients:
     with st.container():
+        c_name = clean_html(client.get('name', ''))
+        c_business = clean_html(client.get('business_name', ''))
+        c_email = clean_html(client.get('email', ''))
+        c_address = clean_html(client.get('address', ''))
+        c_type = clean_html(client.get('business_type', ''))
+        
+        details_html = ""
+        if c_business:
+            details_html += f'🏢 {c_business} &nbsp;'
+        if c_email:
+            details_html += f'•&nbsp; 📧 {c_email} &nbsp;'
+        if c_address:
+            details_html += f'•&nbsp; 📍 {c_address}'
+
         st.markdown(
             f"""
             <div style="
@@ -388,15 +444,13 @@ for client in all_clients:
                 margin-bottom: 0.5rem;
             ">
                 <h3 style="margin: 0; color: #1f4788; font-size: 1.2rem;">
-                    👤 {client['name']}
+                    👤 {c_name}
                 </h3>
                 <p style="margin: 0.3rem 0 0 0; color: #666; font-size: 0.95rem;">
-                    {f'🏢 {client.get("business_name")}' if client.get('business_name') else ''}
-                    {f' &nbsp;•&nbsp; 📧 {client.get("email")}' if client.get('email') else ''}
-                    {f' &nbsp;•&nbsp; 📍 {client.get("address")}' if client.get('address') else ''}
+                    {details_html}
                 </p>
                 <p style="margin: 0.3rem 0 0 0; color: #999; font-size: 0.85rem;">
-                    {f'💼 {client.get("business_type")}' if client.get('business_type') else ''}
+                    {f'💼 {c_type}' if c_type else ''}
                     &nbsp;•&nbsp; 📅 {'နောက်ဆုံး' if st.session_state.get('language') == 'my' else 'Last'}: {format_date_mm(client.get('updated_at', ''))}
                 </p>
             </div>
@@ -404,58 +458,33 @@ for client in all_clients:
             unsafe_allow_html=True,
         )
         
-        # Action buttons (key တွေ အားလုံး သီးခြားစီ ထည့်ထားပါတယ်)
         col1, col2, col3, col4, col5 = st.columns([2, 1, 1, 1, 1])
         
         with col1:
-            if st.button(
-                t('details'),
-                key=f"detail_{client['id']}",
-                use_container_width=True,
-            ):
+            if st.button(t('details'), key=f"detail_{client['id']}", use_container_width=True):
                 st.session_state["selected_client_id"] = client["id"]
-                st.session_state["selected_client_name"] = client["name"]
+                st.session_state["selected_client_name"] = c_name
                 st.switch_page("pages/2_Client_Detail.py")
-        
         with col2:
-            if st.button(
-                t('edit'),
-                key=f"edit_{client['id']}",
-                use_container_width=True,
-            ):
+            if st.button(t('edit'), key=f"edit_{client['id']}", use_container_width=True):
                 st.session_state.editing_client_id = client["id"]
                 st.session_state.show_add_form = False
+                # Edit လုပ်တဲ့အခါ လက်ရှိ ကိန်းတွေ ပြန်ထည့်ပေးဖို့ လိုတယ်
+                st.session_state.edit_business_type = client.get("business_type", "")
                 st.rerun()
-        
         with col3:
-            if st.button(
-                t('delete'),
-                key=f"del_{client['id']}",
-                use_container_width=True,
-            ):
+            if st.button(t('delete'), key=f"del_{client['id']}", use_container_width=True):
                 st.session_state.delete_confirm_id = client["id"]
                 st.rerun()
-        
         with col4:
-            if st.button(
-                "🏭",
-                key=f"quick_mfg_{client['id']}",
-                help="ကုန်ထုတ် စာရင်း" if st.session_state.get("language") == "my" else "Manufacturing",
-                use_container_width=True,
-            ):
+            if st.button("🏭", key=f"quick_mfg_{client['id']}", help="ကုန်ထုတ် စာရင်း", use_container_width=True):
                 st.session_state["selected_client_id"] = client["id"]
-                st.session_state["selected_client_name"] = client["name"]
+                st.session_state["selected_client_name"] = c_name
                 st.switch_page("pages/3_Manufacturing.py")
-        
         with col5:
-            if st.button(
-                "📊",
-                key=f"quick_bs_{client['id']}",
-                help="လက်ကျန်စာရင်း" if st.session_state.get("language") == "my" else "Balance Sheet",
-                use_container_width=True,
-            ):
+            if st.button("📊", key=f"quick_bs_{client['id']}", help="လက်ကျန်စာရင်း", use_container_width=True):
                 st.session_state["selected_client_id"] = client["id"]
-                st.session_state["selected_client_name"] = client["name"]
+                st.session_state["selected_client_name"] = c_name
                 st.switch_page("pages/5_Balance_Sheet.py")
         
         st.markdown("<div style='margin-bottom: 1rem;'></div>", unsafe_allow_html=True)
@@ -468,6 +497,7 @@ if st.session_state.delete_confirm_id is not None:
     client = db.get_client(st.session_state.delete_confirm_id)
     
     if client:
+        c_name = clean_html(client.get('name', ''))
         st.divider()
         st.markdown(
             f"""
@@ -482,7 +512,7 @@ if st.session_state.delete_confirm_id is not None:
                     ⚠️ {'ဖျက်ရန် အတည်ပြုပါ' if st.session_state.get('language') == 'my' else 'Confirm Delete'}
                 </h3>
                 <p style="color: #c62828; margin: 0.5rem 0 0 0; font-size: 1rem;">
-                    '<b>{client['name']}</b>' {'ကို ဖျက်ပါမည်လား? ဒီဖောက်သည်ရဲ့ ရှင်းတမ်းအားလုံးလည်း ပါသွားပါမည်။' if st.session_state.get('language') == 'my' else 'will be deleted along with all its statements. Are you sure?'}
+                    '<b>{c_name}</b>' {'ကို ဖျက်ပါမည်လား? ဒီဖောက်သည်ရဲ့ ရှင်းတမ်းအားလုံးလည်း ပါသွားပါမည်။' if st.session_state.get('language') == 'my' else 'will be deleted along with all its statements. Are you sure?'}
                 </p>
             </div>
             """,
@@ -494,7 +524,7 @@ if st.session_state.delete_confirm_id is not None:
             if st.button(t('delete'), type="primary", use_container_width=True, key="confirm_del_btn"):
                 try:
                     db.delete_client(st.session_state.delete_confirm_id)
-                    st.success(f"✓ '{client['name']}' {'ဖျက်ပြီးပါပြီ' if st.session_state.get('language') == 'my' else 'deleted successfully'}")
+                    st.success(f"✓ '{c_name}' {'ဖျက်ပြီးပါပြီ' if st.session_state.get('language') == 'my' else 'deleted successfully'}")
                     st.session_state.delete_confirm_id = None
                     st.rerun()
                 except Exception as e:

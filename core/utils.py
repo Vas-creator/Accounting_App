@@ -13,6 +13,18 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional, Union, List, Dict, Any
 import streamlit as st
 
+import re
+
+def clean_html(text: str) -> str:
+    """HTML tag တွေကို ဖယ်ရှားပေးတဲ့ Function"""
+    if not text:
+        return ""
+    # HTML tags တွေကို ရှာပြီး ဖယ်ရှားမယ်
+    clean = re.sub(r'<[^>]+>', '', str(text))
+    # &nbsp; စတဲ့ entity တွေကို space အဖြစ်ပြောင်းမယ်
+    clean = clean.replace("&nbsp;", " ").replace("&amp;", "&")
+    return clean.strip()
+
 
 # ============================================================
 # 1. NUMBER FORMATTING

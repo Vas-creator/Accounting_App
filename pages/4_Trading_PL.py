@@ -43,7 +43,7 @@ if not client:
     st.stop()
 
 # ============================================================
-# SESSION STATE (ဖောက်သည်ပြောင်းရင် ရှင်းမယ်)
+# SESSION STATE
 # ============================================================
 
 if st.session_state.get("current_tpl_client_id") != client_id:
@@ -60,7 +60,7 @@ if st.session_state.get("current_tpl_client_id") != client_id:
         del st.session_state["tpl_period"]
 
 # ============================================================
-# HISTORY: ကာလအလိုက် စာရင်းဟောင်းများ ရယူခြင်း
+# HISTORY
 # ============================================================
 
 history = []
@@ -70,7 +70,7 @@ except Exception:
     history = []
 
 history_periods = [h["period_end"] for h in history if h.get("period_end")]
-history_periods = sorted(list(set(history_periods)), reverse=True) # အသစ်ဆုံးကို အပေါ်မှာ ပြမယ်
+history_periods = sorted(list(set(history_periods)), reverse=True)
 
 # ============================================================
 # SIDEBAR
@@ -120,13 +120,12 @@ st.markdown(
 )
 
 # ============================================================
-# PERIOD & HISTORY SELECTION
+# PERIOD & HISTORY
 # ============================================================
 
 col_date, col_hist = st.columns([1, 1])
 
 with col_date:
-    # 1. ကာလအသစ် ရွေးချယ်ခြင်း
     if "tpl_period" not in st.session_state:
         st.session_state.tpl_period = str(date.today())
     
@@ -139,14 +138,12 @@ with col_date:
     st.session_state.tpl_period = str(period_end)
 
 with col_hist:
-    # 2. စာရင်းဟောင်း ရွေးချယ်ခြင်း (History)
     if history_periods:
         st.markdown("**📜 သိမ်းထားသော ကာလများ (History)**")
         options = ["-- ကာလအသစ် (New) --"] + history_periods
         selected_history = st.selectbox("ကာလဟောင်း ပြန်ကြည့်ရန်", options=options, label_visibility="collapsed")
         
         if selected_history != "-- ကာလအသစ် (New) --":
-            # ရွေးလိုက်တဲ့ ကာလအတွက် Data ကို ဆွဲထုတ်မယ်
             if st.session_state.get("selected_history_period") != selected_history:
                 st.session_state.selected_history_period = selected_history
                 
@@ -170,7 +167,7 @@ with col_hist:
         st.info("သိမ်းထားသော စာရင်း မရှိသေးပါ။")
 
 # ============================================================
-# LOAD EXISTING (If New period)
+# LOAD EXISTING
 # ============================================================
 
 if "tpl_data" not in st.session_state:
@@ -195,13 +192,19 @@ if "custom_data" not in st.session_state:
     else:
         st.session_state.custom_data = {"revenue": [], "cos": [], "expenses": []}
 
-# Show/Hide State များ
+# Show/Hide State
 if "show_revenue" not in st.session_state:
     st.session_state.show_revenue = {"cash_sales": True, "credit_sales": True, "sales_return": True}
 if "show_cos" not in st.session_state:
     st.session_state.show_cos = {"opening_stock_finished": True, "purchases": True, "carriage_inward": True, "purchase_return": True, "closing_stock_finished": True}
 if "show_expenses" not in st.session_state:
     st.session_state.show_expenses = {"staff_salary": True, "tax_other": True, "electricity": True, "telephone": True, "fuel": True, "repair_maintenance": True, "general_expenses": True, "dep_building": True, "dep_machine": True, "dep_furniture": True, "dep_vehicle": True}
+if "show_other_income" not in st.session_state:
+    st.session_state.show_other_income = {
+        "discount_received": True, "commission_received": True,
+        "interest_received": True, "rent_received": True,
+        "bad_debt_recovered": True, "misc_income": True
+    }
 
 # ============================================================
 # TRY TO PULL MANUFACTURING COST
@@ -322,11 +325,28 @@ with col1:
         unsafe_allow_html=True,
     )
 
-    mfg_cost_input = st.number_input(
-        "🏭 ကုန်ထုတ်လုပ်မှု ကုန်ကျစရိတ် (Manufacturing မှ)",
-        value=int(st.session_state.tpl_data.get("manufacturing_cost", mfg_production_cost)),
-        min_value=0, step=1000, format="%d", key="tpl_manufacturing_cost_input",
+    mfg_direct_material = st.number_input(
+        "🏭 ကုန်ထုတ်လုပ်မှု - Direct Materials",
+        value=int(st.session_state.tpl_data.get("mfg_direct_material", 0)),
+        min_value=0, step=1000, format="%d", key="tpl_mfg_direct_material",
     )
+    st.session_state.tpl_data["mfg_direct_material"] = mfg_direct_material
+    
+    mfg_direct_labour = st.number_input(
+        "🏭 ကုန်ထုတ်လုပ်မှု - Direct Labour",
+        value=int(st.session_state.tpl_data.get("mfg_direct_labour", 0)),
+        min_value=0, step=1000, format="%d", key="tpl_mfg_direct_labour",
+    )
+    st.session_state.tpl_data["mfg_direct_labour"] = mfg_direct_labour
+    
+    mfg_direct_overhead = st.number_input(
+        "🏭 ကုန်ထုတ်လုပ်မှု - Direct Overhead",
+        value=int(st.session_state.tpl_data.get("mfg_direct_overhead", 0)),
+        min_value=0, step=1000, format="%d", key="tpl_mfg_direct_overhead",
+    )
+    st.session_state.tpl_data["mfg_direct_overhead"] = mfg_direct_overhead
+    
+    mfg_cost_input = mfg_direct_material + mfg_direct_labour + mfg_direct_overhead
     st.session_state.tpl_data["manufacturing_cost"] = mfg_cost_input
 
     cs_opening = num_input("အဖွင့် ကုန်ချောလက်ကျန်", "opening_stock_finished", state_key="show_cos")
@@ -396,11 +416,30 @@ with col2:
     st.session_state.tpl_data["_total_expenses"] = total_expenses
 
 # ============================================================
-# COLUMN 3 — LIVE CALC
+# COLUMN 3 — LIVE CALC & OTHER INCOME
 # ============================================================
 
 with col3:
-    net_profit = gross_profit - total_expenses
+    st.markdown(
+        f"""<h3 style="color: #2e7d32; font-size: 1.15rem; border-bottom: 2px solid #43e97b; padding-bottom: 0.3rem;">
+            {'အခြား ဝင်ငွေများ (Other Income)' if st.session_state.get('language', 'my') == 'my' else 'Other Income'}
+        </h3>""",
+        unsafe_allow_html=True,
+    )
+    
+    oi_discount = num_input("လျှော့စျေး ရရှိမှု", "discount_received", state_key="show_other_income")
+    oi_commission = num_input("ကော်မရှင် ရရှိမှု", "commission_received", state_key="show_other_income")
+    oi_interest = num_input("အတိုးရရှိမှု", "interest_received", state_key="show_other_income")
+    oi_rent = num_input("ငှားရမ်းခရရှိမှု", "rent_received", state_key="show_other_income")
+    oi_bad_debt = num_input("မစုရှိသောအကြေးပြန်ရ", "bad_debt_recovered", state_key="show_other_income")
+    oi_misc = num_input("အထွေထွေဝင်ငွေ", "misc_income", state_key="show_other_income")
+
+    total_other_income = oi_discount + oi_commission + oi_interest + oi_rent + oi_bad_debt + oi_misc
+    subtotal_box("အခြား ဝင်ငွေ စုစုပေါင်း", total_other_income, "#2e7d32")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    net_profit = gross_profit + total_other_income - total_expenses
     np_color = "#43e97b" if net_profit >= 0 else "#f5576c"
     np_label = ("အသားတင် အမြတ်" if net_profit >= 0 else "အသားတင် အရှုံး") if st.session_state.get("language") == "my" else ("Net Profit" if net_profit >= 0 else "Net Loss")
 
@@ -416,6 +455,7 @@ with col3:
     st.session_state.tpl_data["_gross_profit"] = gross_profit
     st.session_state.tpl_data["_total_revenue"] = total_revenue
     st.session_state.tpl_data["_total_cos"] = total_cos
+    st.session_state.tpl_data["_total_other_income"] = total_other_income
 
     st.markdown(
         f"""<div style="background-color: #f5f5f5; padding: 1rem; border-radius: 8px; margin-top: 1rem;">
@@ -424,6 +464,7 @@ with col3:
                 <tr><td>{'အရောင်း' if st.session_state.get('language', 'my') == 'my' else 'Revenue'}</td><td style="text-align: right; font-weight: bold;">{format_number(total_revenue)}</td></tr>
                 <tr><td>{'ကုန်ကျစရိတ်' if st.session_state.get('language', 'my') == 'my' else 'Cost of Sales'}</td><td style="text-align: right; font-weight: bold; color: #c62828;">({format_number(total_cos)})</td></tr>
                 <tr style="border-top: 1px solid #ddd;"><td><b>Gross Profit</b></td><td style="text-align: right; font-weight: bold; color: #1976d2;">{format_number(gross_profit)}</td></tr>
+                <tr><td>{'အခြားဝင်ငွေ' if st.session_state.get('language', 'my') == 'my' else 'Other Income'}</td><td style="text-align: right; font-weight: bold; color: #2e7d32;">{format_number(total_other_income)}</td></tr>
                 <tr><td>{'သုံးစွဲမှု' if st.session_state.get('language', 'my') == 'my' else 'Expenses'}</td><td style="text-align: right; font-weight: bold; color: #c62828;">({format_number(total_expenses)})</td></tr>
                 <tr style="border-top: 2px solid {np_color};"><td><b>Net Profit</b></td><td style="text-align: right; font-weight: bold; color: {np_color}; font-size: 1.05rem;">{format_number(net_profit)}</td></tr>
             </table>
@@ -462,6 +503,24 @@ with col2:
         try:
             pdf_data = dict(st.session_state.tpl_data)
             pdf_data["custom_data"] = st.session_state.custom_data
+            
+            # Checkbox အနေအထားတွေ ထည့်မယ်
+            pdf_data["_show_revenue"] = st.session_state.show_revenue
+            pdf_data["_show_cos"] = st.session_state.show_cos
+            pdf_data["_show_expenses"] = st.session_state.show_expenses
+            pdf_data["_show_other_income"] = st.session_state.show_other_income
+            
+            # ⭐ Manufacturing Cost အကွက် ၃ ခုကို ထည့်မယ်
+            pdf_data["mfg_direct_material"] = st.session_state.tpl_data.get("mfg_direct_material", 0)
+            pdf_data["mfg_direct_labour"] = st.session_state.tpl_data.get("mfg_direct_labour", 0)
+            pdf_data["mfg_direct_overhead"] = st.session_state.tpl_data.get("mfg_direct_overhead", 0)
+            
+            # ကုန်ပစ္စည်းဝယ်ယူမှု၊ သယ်ယူပို့ဆောင်ခ တွေကို ထည့်မယ်
+            pdf_data["purchases"] = cs_purchases
+            pdf_data["carriage_inward"] = cs_carriage
+            pdf_data["add_purchases"] = cs_purchases
+            pdf_data["add_carriage_inward"] = cs_carriage
+            pdf_data["add_manufacturing_cost"] = mfg_cost_input
             
             pdf_data["_total_revenue"] = total_revenue
             pdf_data["_total_cos"] = total_cos
