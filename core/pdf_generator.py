@@ -715,41 +715,75 @@ def _render_balance_sheet_html(t: Dict[str, Any], lang: str) -> str:
         sr_counter += 1
         return s
 
-    html += f'<tr class="section-header"><td colspan="3">{get_pdf_text(lang, "bs_assets_title")}</td></tr>'
+    def _build_row_4(sr, label, amt1="", amt2="", css="", is_bold=False):
+        label_style = "font-weight: bold;" if is_bold else ""
+        return f"""
+        <tr class="{css}">
+            <td class="sr">{sr}</td>
+            <td class="label" style="{label_style}">{label}</td>
+            <td class="amount">{amt1}</td>
+            <td class="amount">{amt2}</td>
+        </tr>
+        """
 
-    html += f'<tr class="sub-section"><td colspan="3">{get_pdf_text(lang, "bs_ca_title")}</td></tr>'
+    html += f'<tr class="section-header"><td colspan="4">{get_pdf_text(lang, "bs_assets_title")}</td></tr>'
+
+    # --- 1. Current Assets ---
+    html += f'<tr class="sub-section"><td colspan="4">{get_pdf_text(lang, "bs_ca_title")}</td></tr>'
     ca = t["assets"]["current_assets"]["items"]
     for k, item in ca.items():
-        html += _build_html_row(get_sr(), get_pdf_text(lang, k), item["value"])
-    html += _build_html_row("", get_pdf_text(lang, "current_assets_total"), t["assets"]["current_assets"]["current_assets_total"], is_subtotal=True)
+        # ⭐ Current Assets တွေကို Amount 1 မှာ ထည့်မယ်
+        html += _build_row_4(get_sr(), get_pdf_text(lang, k), format_number(item["value"]), "")
+    
+    # ⭐ Current Assets စုစုပေါင်းကို Amount 2 မှာ ထည့်မယ်
+    html += _build_row_4("", get_pdf_text(lang, "current_assets_total"), "", format_number(t["assets"]["current_assets"]["current_assets_total"]), css="subtotal-row", is_bold=True)
 
-    html += f'<tr class="sub-section"><td colspan="3">{get_pdf_text(lang, "bs_fa_title")}</td></tr>'
+    # --- 2. Fixed Assets ---
+    html += f'<tr class="sub-section"><td colspan="4">{get_pdf_text(lang, "bs_fa_title")}</td></tr>'
     fa = t["assets"]["fixed_assets"]["items"]
     for k, item in fa.items():
         is_ded = item.get("is_deduction", False)
-        html += _build_html_row(get_sr(), get_pdf_text(lang, k), item["value"], is_deduction=is_ded)
-    html += _build_html_row("", get_pdf_text(lang, "fixed_assets_total"), t["assets"]["fixed_assets"]["fixed_assets_total"], is_subtotal=True)
+        val_str = format_number(item["value"])
+        if is_ded:
+            val_str = f"({val_str})"
+        # ⭐ Fixed Assets တွေကို Amount 1 မှာ ထည့်မယ်
+        html += _build_row_4(get_sr(), get_pdf_text(lang, k), val_str, "")
+    
+    # ⭐ Fixed Assets စုစုပေါင်းကို Amount 2 မှာ ထည့်မယ်
+    html += _build_row_4("", get_pdf_text(lang, "fixed_assets_total"), "", format_number(t["assets"]["fixed_assets"]["fixed_assets_total"]), css="subtotal-row", is_bold=True)
 
-    html += _build_html_row("", get_pdf_text(lang, "total_assets"), t["assets"]["total_assets"]["value"], is_total=True)
+    # ⭐ Total Assets ကို Amount 2 မှာ ထည့်မယ်
+    html += _build_row_4("", get_pdf_text(lang, "total_assets"), "", format_number(t["assets"]["total_assets"]["value"]), css="total-row", is_bold=True)
 
-    html += f'<tr class="section-header"><td colspan="3">{get_pdf_text(lang, "bs_liab_title")}</td></tr>'
-    html += f'<tr class="sub-section"><td colspan="3">{get_pdf_text(lang, "bs_cl_title")}</td></tr>'
+    # --- 3. Liabilities ---
+    html += f'<tr class="section-header"><td colspan="4">{get_pdf_text(lang, "bs_liab_title")}</td></tr>'
+    html += f'<tr class="sub-section"><td colspan="4">{get_pdf_text(lang, "bs_cl_title")}</td></tr>'
     cl = t["liabilities"]["current_liabilities"]["items"]
     for k, item in cl.items():
-        html += _build_html_row(get_sr(), get_pdf_text(lang, k), item["value"])
-    html += _build_html_row("", get_pdf_text(lang, "current_liabilities_total"), t["liabilities"]["current_liabilities"]["current_liabilities_total"], is_subtotal=True)
+        # ⭐ Liabilities တွေကို Amount 1 မှာ ထည့်မယ်
+        html += _build_row_4(get_sr(), get_pdf_text(lang, k), format_number(item["value"]), "")
+    
+    # ⭐ Liabilities စုစုပေါင်းကို Amount 2 မှာ ထည့်မယ်
+    html += _build_row_4("", get_pdf_text(lang, "current_liabilities_total"), "", format_number(t["liabilities"]["current_liabilities"]["current_liabilities_total"]), css="subtotal-row", is_bold=True)
 
-    html += _build_html_row("", get_pdf_text(lang, "total_liabilities"), t["liabilities"]["total_liabilities"]["value"], is_total=True)
+    # ⭐ Total Liabilities ကို Amount 2 မှာ ထည့်မယ်
+    html += _build_row_4("", get_pdf_text(lang, "total_liabilities"), "", format_number(t["liabilities"]["total_liabilities"]["value"]), css="total-row", is_bold=True)
 
-    html += f'<tr class="section-header"><td colspan="3">{get_pdf_text(lang, "bs_cap_title")}</td></tr>'
+    # --- 4. Capital ---
+    html += f'<tr class="section-header"><td colspan="4">{get_pdf_text(lang, "bs_cap_title")}</td></tr>'
     cap = t["capital"]["items"]
-    html += _build_html_row(get_sr(), get_pdf_text(lang, "eq_capital"), cap["eq_capital"]["value"])
-    html += _build_html_row(get_sr(), get_pdf_text(lang, "eq_retain"), cap["eq_retain"]["value"])
-    html += _build_html_row(get_sr(), get_pdf_text(lang, "eq_profit"), cap["eq_profit"]["value"])
-    html += _build_html_row(get_sr(), get_pdf_text(lang, "eq_drawing"), cap["eq_drawing"]["value"], is_deduction=True)
-    html += _build_html_row("", get_pdf_text(lang, "capital_total"), t["capital"]["capital_total"], is_subtotal=True)
+    
+    # ⭐ Capital တွေကို Amount 1 မှာ ထည့်မယ်
+    html += _build_row_4(get_sr(), get_pdf_text(lang, "eq_capital"), format_number(cap["eq_capital"]["value"]), "")
+    html += _build_row_4(get_sr(), get_pdf_text(lang, "eq_retain"), format_number(cap["eq_retain"]["value"]), "")
+    html += _build_row_4(get_sr(), get_pdf_text(lang, "eq_profit"), format_number(cap["eq_profit"]["value"]), "")
+    html += _build_row_4(get_sr(), get_pdf_text(lang, "eq_drawing"), f"({format_number(cap['eq_drawing']['value'])})", "")
+    
+    # ⭐ Capital စုစုပေါင်းကို Amount 2 မှာ ထည့်မယ်
+    html += _build_row_4("", get_pdf_text(lang, "capital_total"), "", format_number(t["capital"]["capital_total"]), css="subtotal-row", is_bold=True)
 
-    html += _build_html_row("", get_pdf_text(lang, "liabilities_and_capital"), t["balance_check"]["liabilities_and_capital"]["value"], is_total=True)
+    # ⭐ Liabilities + Capital ကို Amount 2 မှာ ထည့်မယ်
+    html += _build_row_4("", get_pdf_text(lang, "liabilities_and_capital"), "", format_number(t["balance_check"]["liabilities_and_capital"]["value"]), css="total-row", is_bold=True)
 
     diff = t["balance_check"]["difference"]
     is_balanced = t["balance_check"]["is_balanced"]
@@ -760,9 +794,8 @@ def _render_balance_sheet_html(t: Dict[str, Any], lang: str) -> str:
         msg = get_pdf_text(lang, "not_balanced_msg").format(format_number(diff, decimals=0))
         css_class = "not-balanced"
 
-    html += f'<tr class="{css_class}"><td colspan="3" style="text-align:center; font-weight:bold; padding: 10px;">{msg}</td></tr>'
+    html += f'<tr class="{css_class}"><td colspan="4" style="text-align:center; font-weight:bold; padding: 10px;">{msg}</td></tr>'
     return html
-
 
 def _render_cash_flow_html(data: Dict[str, Any], lang: str) -> str:
     html = ""
