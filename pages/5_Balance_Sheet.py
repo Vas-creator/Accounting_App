@@ -13,6 +13,7 @@ from core.utils import (
 )
 from core.pdf_generator import generate_pdf
 from core.translations import t
+from core.utils import play_click_sound
 
 st.set_page_config(
     page_title="Balance Sheet",
@@ -383,6 +384,7 @@ col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     if st.button(t('save'), use_container_width=True, type="primary"):
+        play_click_sound()  # ⭐ ဒါလေး ထည့်ပါ
         try:
             bs_data = st.session_state.bs_data
             bs_data["ca_inventories"] = ca_inventories
@@ -415,6 +417,7 @@ with col1:
 
 with col2:
     if st.button("📄 PDF", use_container_width=True):
+        play_click_sound()  # ⭐ ဒါလေး ထည့်ပါ
         try:
             pdf_bytes = generate_pdf(
                 statement_type="balance_sheet",
@@ -437,11 +440,13 @@ with col2:
 
 with col3:
     if st.button("🔄 Reset", use_container_width=True):
+        play_click_sound()  # ⭐ ဒါလေး ထည့်ပါ
         st.session_state.bs_data = {}
         st.rerun()
 
 with col4:
     if st.button(t('detail'), use_container_width=True):
+        play_click_sound()  # ⭐ ဒါလေး ထည့်ပါ
         st.switch_page("pages/2_Client_Detail.py")
 
 st.divider()

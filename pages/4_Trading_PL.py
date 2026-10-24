@@ -9,6 +9,8 @@ from core.utils import (
 )
 from core.pdf_generator import generate_pdf
 from core.translations import t
+from core.utils import play_click_sound  # ⭐ ဒါလေး ထပ်ထည့်ပါ
+
 
 st.set_page_config(
     page_title="Trading & P&L",
@@ -483,6 +485,7 @@ col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     if st.button(t('save'), use_container_width=True, type="primary"):
+        play_click_sound()  # ⭐ ဒါလေး ထည့်ပါ
         try:
             data_json = json.dumps(st.session_state.tpl_data, ensure_ascii=False)
             db.save_statement(
@@ -500,6 +503,7 @@ with col1:
 
 with col2:
     if st.button("📄 PDF", use_container_width=True):
+        play_click_sound()  # ⭐ ဒါလေး ထည့်ပါ
         try:
             pdf_data = dict(st.session_state.tpl_data)
             pdf_data["custom_data"] = st.session_state.custom_data
@@ -536,7 +540,7 @@ with col2:
                 lang=st.session_state.language,
                 business_type=client.get("business_type", ""),  # ⭐ ဒါလေး ထည့်မယ်
             )
-            
+
             st.download_button(
                 "⬇️ PDF Download",
                 data=pdf_bytes,
@@ -549,12 +553,14 @@ with col2:
 
 with col3:
     if st.button("🔄 Reset", use_container_width=True):
+        play_click_sound()  # ⭐ ဒါလေး ထည့်ပါ
         st.session_state.tpl_data = {}
         st.session_state.custom_data = {"revenue": [], "cos": [], "expenses": []}
         st.rerun()
 
 with col4:
     if st.button(t('detail'), use_container_width=True):
+        play_click_sound()  # ⭐ ဒါလေး ထည့်ပါ
         st.switch_page("pages/2_Client_Detail.py")
 
 # ============================================================
