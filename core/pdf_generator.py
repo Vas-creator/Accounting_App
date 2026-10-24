@@ -65,7 +65,7 @@ PDF_TRANSLATIONS = {
         "cash_sales": "ငွေသား အရောင်း",
         "credit_sales": "အကြွေး အရောင်း",
         "less_sales_return": "အရောင်းပြန်အမ်း နုတ်",
-        "net_sales": "အရောင်း စုစုပေါင်း (Net Sales)",
+        "net_sales": "အရောင်း စုစုပေါင်း (Revenue)",
         "opening_stock_finished": "အဖွင့် ကုန်ချောလက်ကျန်",
         "add_purchases": "ကုန်ပစ္စည်း ဝယ်ယူမှု",
         "add_manufacturing_cost": "ကုန်ထုတ်လုပ်မှု ကုန်ကျစရိတ် ပေါင်း",
@@ -79,7 +79,7 @@ PDF_TRANSLATIONS = {
         "start_with_gp": "အမြတ် (Gross Profit) ဖြင့် စတင်",
         "other_income": "အခြား ဝင်ငွေများ",
         "other_income_total": "အခြား ဝင်ငွေ စုစုပေါင်း",
-        "expenses": "အသုံးစရိတ်များ",
+        "expenses": "စီမံခန့်ခွဲမှု အသုံးစရိတ်များ",
         "expenses_total": "အသုံးစရိတ် စုစုပေါင်း",
         "net_profit": "အသားတင် အမြတ် (Net Profit)",
 
@@ -181,7 +181,7 @@ PDF_TRANSLATIONS = {
         "cash_sales": "Cash Sales",
         "credit_sales": "Credit Sales",
         "less_sales_return": "Less: Sales Returns",
-        "net_sales": "Net Sales",
+        "net_sales": "Total Revenue",
         "opening_stock_finished": "Opening Stock (Finished)",
         "add_purchases": "Add: Purchases",
         "add_manufacturing_cost": "Add: Manufacturing Cost",
@@ -195,7 +195,7 @@ PDF_TRANSLATIONS = {
         "start_with_gp": "Start with Gross Profit",
         "other_income": "Other Income",
         "other_income_total": "Total Other Income",
-        "expenses": "Expenses",
+        "expenses": "Administrative Expenses",
         "expenses_total": "Total Expenses",
         "net_profit": "Net Profit",
 
@@ -606,8 +606,9 @@ def _render_trading_pl_html(t: Dict[str, Any], lang: str, data: Dict[str, Any]) 
                 html += _build_row_5(get_sr(), item["label_mm"] if lang=="my" else item["label_en"], "", format_number(val), "")
     html += _build_row_5("", get_pdf_text(lang, "other_income_total"), "", format_number(t["profit_loss"]["other_income"]["other_income_total"]), "", css="subtotal-row", is_bold=True)
 
-    # Net Sales ကို Amount 3 မှာ ပြမယ်
-    html += _build_row_5("", get_pdf_text(lang, "net_sales"), "", "", format_number(t["trading"]["sales"]["net_sales"]), css="subtotal-row", is_bold=True)
+    # ⭐ Net Sales (Revenue) ကို Amount 3 မှာ ပြမယ်
+    revenue_label = "အရောင်း စုစုပေါင်း (Revenue)" if lang == "my" else "Total Revenue"
+    html += _build_row_5("", revenue_label, "", "", format_number(t["trading"]["sales"]["net_sales"]), css="subtotal-row", is_bold=True)
 
     # --- 2. Cost of Production ---
     cogs = t["trading"]["cogs"]["items"]
@@ -643,16 +644,15 @@ def _render_trading_pl_html(t: Dict[str, Any], lang: str, data: Dict[str, Any]) 
     for item in custom_data.get("cos", []):
         total_cogs_before_closing += item.get("value", 0)
 
-    # Cost of Production ကို Amount 2 မှာ ပြမယ်
     html += cost_of_prod_rows
 
     if show_cos.get("closing_stock_finished", True):
         html += _build_row_5(get_sr(), get_pdf_text(lang, "less_closing_stock"), "", f"({format_number(cogs['less_closing_stock']['value'])})", "")
 
-            # COGS ကို Amount 3 မှာ ပြမယ် (ဘာသာစကားအလိုက် စာသားပြောင်းမယ်)
-    cogs_label = "ကုန်ရောင်း စုစုပေါင်း (Cost of Goods Sold)" if lang == "my" else "Cost of Goods Sold"
+    # ⭐ COGS ကို Amount 3 မှာ ပြမယ် (စာသားပြောင်းထားတယ်)
+    cogs_label = "ကုန်ရောင်း တန်ဖိုး (Cost of Sales)" if lang == "my" else "Cost of Sales"
     html += _build_row_5("", cogs_label, "", "", format_number(t["trading"]["cogs"]["cogs_total"]), css="cogs-row", is_bold=True)
-    
+
     gp = t["trading"]["gross_profit"]
     gp_label = get_pdf_text(lang, "gross_profit") if gp["value"] >= 0 else ("အရှုံး" if lang=="my" else "Gross Loss")
     html += _build_row_5("", gp_label, "", "", format_number(gp["value"]), css="total-row", is_bold=True)
@@ -662,7 +662,7 @@ def _render_trading_pl_html(t: Dict[str, Any], lang: str, data: Dict[str, Any]) 
 
     html += f'<tr class="section-header"><td colspan="5">{get_pdf_text(lang, "expenses")}</td></tr>'
     
-        # ⭐ ဘာသာစကားအလိုက် စာသားတွေ ပြောင်းမယ်
+    # ⭐ ဘာသာစကားအလိုက် စာသားတွေ ပြောင်းမယ်
     if lang == "my":
         default_expenses_map = {
             "staff_salary": "ဝန်ထမ်းခနှင့် အလုပ်သမားခ",
