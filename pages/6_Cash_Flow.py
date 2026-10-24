@@ -14,6 +14,7 @@ from core.utils import (
 )
 from core.pdf_generator import generate_pdf
 from core.translations import t
+from core.utils import play_click_sound
 
 # ============================================================
 # PAGE CONFIG
@@ -555,6 +556,7 @@ col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     if st.button(t('save'), use_container_width=True, type="primary"):
+        play_click_sound()  # ⭐ ဒါလေး ထည့်ပါ
         try:
             cf["_net_operating"] = net_operating
             cf["_net_investing"] = net_investing
@@ -576,6 +578,7 @@ with col1:
 
 with col2:
     if st.button("📄 PDF", use_container_width=True):
+        play_click_sound()  # ⭐ ဒါလေး ထည့်ပါ
         try:
             pdf_data = dict(cf)
             
@@ -593,7 +596,7 @@ with col2:
                 lang=st.session_state.language,
                 business_type=client.get("business_type", ""),  # ⭐ ဒါလေး ထည့်မယ်
             )
-            
+
             st.download_button(
                 "⬇️ PDF Download",
                 data=pdf_bytes,
@@ -606,11 +609,13 @@ with col2:
 
 with col3:
     if st.button("🔄 Reset", use_container_width=True):
+        play_click_sound()  # ⭐ ဒါလေး ထည့်ပါ
         st.session_state.cf_data = {}
         st.rerun()
 
 with col4:
     if st.button(t('detail'), use_container_width=True):
+        play_click_sound()  # ⭐ ဒါလေး ထည့်ပါ
         st.switch_page("pages/2_Client_Detail.py")
 
 # ============================================================

@@ -12,6 +12,9 @@ from datetime import datetime, date
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional, Union, List, Dict, Any
 import streamlit as st
+import base64
+import os
+import streamlit.components.v1 as components
 
 import re
 
@@ -24,6 +27,27 @@ def clean_html(text: str) -> str:
     # &nbsp; စတဲ့ entity တွေကို space အဖြစ်ပြောင်းမယ်
     clean = clean.replace("&nbsp;", " ").replace("&amp;", "&")
     return clean.strip()
+
+def play_click_sound():
+    """Button နှိပ်တိုင်း အသံထွက်စေတဲ့ Function"""
+    # Project root ကနေ လမ်းကြောင်း ယူမယ်
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sound_path = os.path.join(base_dir, "assets", "sounds", "click.mp3")
+    
+    if os.path.exists(sound_path):
+        try:
+            with open(sound_path, "rb") as f:
+                data = f.read()
+                b64 = base64.b64encode(data).decode()
+                # HTML နဲ့ Audio Tag ကို သုံးပြီး အသံဖွင့်မယ်
+                audio_html = f"""
+                    <audio autoplay="true" style="display:none;">
+                        <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
+                    </audio>
+                """
+                components.html(audio_html, height=0, width=0)
+        except Exception as e:
+            print(f"Sound error: {e}")
 
 
 # ============================================================

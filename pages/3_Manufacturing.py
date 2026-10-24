@@ -16,6 +16,7 @@ from core.utils import (
 from core.templates import get_input_fields
 from core.pdf_generator import generate_pdf, calculate_manufacturing
 from core.translations import t
+from core.utils import play_click_sound
 
 # ============================================================
 # PAGE CONFIG
@@ -413,6 +414,7 @@ col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     if st.button(t('save'), use_container_width=True, type="primary"):
+        play_click_sound()  # ⭐ ဒါလေး ထည့်ပါ
         try:
             data_json = json.dumps(st.session_state.mfg_data, ensure_ascii=False)
             db.save_statement(
@@ -429,6 +431,7 @@ with col1:
 
 with col2:
     if st.button("📄 PDF", use_container_width=True):
+        play_click_sound()  # ⭐ ဒါလေး ထည့်ပါ
         try:
             pdf_data = dict(st.session_state.mfg_data)
             pdf_data["custom_data"] = st.session_state.mfg_custom_data
@@ -453,6 +456,7 @@ with col2:
 
 with col3:
     if st.button("🔄 Reset", use_container_width=True):
+        play_click_sound()  # ⭐ ဒါလေး ထည့်ပါ
         st.session_state.mfg_data = {}
         st.session_state.mfg_custom_data = {
             "direct_materials": [], 
@@ -464,6 +468,7 @@ with col3:
 
 with col4:
     if st.button(t('detail'), use_container_width=True):
+        play_click_sound()  # ⭐ ဒါလေး ထည့်ပါ
         st.switch_page("pages/2_Client_Detail.py")
 
 # ============================================================
