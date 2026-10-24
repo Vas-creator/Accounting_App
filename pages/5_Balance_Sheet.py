@@ -422,7 +422,9 @@ with col2:
                 data=st.session_state.bs_data,
                 as_at_date=st.session_state.bs_date,
                 lang=st.session_state.language,
+                business_type=client.get("business_type", ""),  # ⭐ ဒါလေး ထည့်မယ်
             )
+            
             st.download_button(
                 "⬇️ PDF Download",
                 data=pdf_bytes,
