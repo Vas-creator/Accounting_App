@@ -257,6 +257,19 @@ PDF_TRANSLATIONS = {
 def get_pdf_text(lang: str, key: str) -> str:
     return PDF_TRANSLATIONS.get(lang, PDF_TRANSLATIONS["my"]).get(key, key)
 
+def format_date_ordinal(date_str: str) -> str:
+    """ရက်စွဲကို 31st March 2024 ပုံစံဖြစ်အောင် ပြောင်းပေးတဲ့ Function"""
+    try:
+        d = datetime.strptime(date_str, "%Y-%m-%d")
+        day = d.day
+        if 11 <= day <= 13:
+            suffix = 'th'
+        else:
+            suffix = {1: 'st', 2: 'nd', 3: 'rd'}.get(day % 10, 'th')
+        return f"{day}{suffix} {d.strftime('%B %Y')}"
+    except Exception:
+        return date_str
+
 
 # ============================================================
 # 1. CALCULATION ENGINE
@@ -450,12 +463,14 @@ def calculate_balance_sheet(data: Dict[str, Any]) -> Dict[str, Any]:
 # 2. HTML RENDER HELPERS
 # ============================================================
 
-def _build_html_header(client_name: str, title: str, period_str: str) -> str:
+def _build_html_header(client_name: str, title: str, period_str: str, business_type: str = "") -> str:
+    business_type_html = f'<p class="business-type">{business_type}</p>' if business_type else ""
     return f"""
     <div class="header">
         <h1>{client_name}</h1>
         <h2>{title}</h2>
         <p class="period">{period_str}</p>
+        {business_type_html}
     </div>
     """
 
@@ -881,6 +896,7 @@ def generate_pdf(
     as_at_date: str = "",
     output_path: Optional[str] = None,
     lang: str = "my",
+    business_type: str = "",  # ⭐ ဒါလေး ထပ်ထည့်မယ်
 ) -> bytes:
 
     titles = {
@@ -896,8 +912,13 @@ def generate_pdf(
     if statement_type == "manufacturing":
         data["period_end"] = period_end
         t_res = calculate_manufacturing(data)
-        period_str = f"{get_pdf_text(lang, 'period_end')}: {format_date_mm(period_end)}"
+        # ⭐ "For the year ended" ပြောင်းမယ်
+        if lang == "en":
+            period_str = f"For the year ended {format_date_ordinal(period_end)}"
+        else:
+            period_str = f"ကာလကုန်: {format_date_ordinal(period_end)}"
         table_html = _render_manufacturing_html(t_res, lang)
+        
     elif statement_type == "trading_pl":
         data["period_end"] = period_end
         t_res = calculate_trading_pl(data)
@@ -912,21 +933,32 @@ def generate_pdf(
             t_res["profit_loss"]["expenses"]["expenses_total"] = data["_total_expenses"]
         if data.get("_net_profit") is not None:
             t_res["profit_loss"]["net_profit"]["value"] = data["_net_profit"]
-
-        period_str = f"{get_pdf_text(lang, 'period_end')}: {format_date_mm(period_end)}"
+        # ⭐ "For the year ended" ပြောင်းမယ်
+        if lang == "en":
+            period_str = f"For the year ended {format_date_ordinal(period_end)}"
+        else:
+            period_str = f"ကာလကုန်: {format_date_ordinal(period_end)}"
         table_html = _render_trading_pl_html(t_res, lang, data)
+
     elif statement_type == "balance_sheet":
         data["as_at_date"] = as_at_date
         t_res = calculate_balance_sheet(data)
-        period_str = f"{get_pdf_text(lang, 'as_at_date')}: {format_date_mm(as_at_date)}"
+        if lang == "en":
+            period_str = f"As at {format_date_ordinal(as_at_date)}"
+        else:
+            period_str = f"ရက်စွဲ: {format_date_ordinal(as_at_date)}"
         table_html = _render_balance_sheet_html(t_res, lang)
+
     elif statement_type == "cash_flow":
         data["period_end"] = period_end
-        period_str = f"{get_pdf_text(lang, 'period_end')}: {format_date_mm(period_end)}"
+        # ⭐ "For the year ended" ပြောင်းမယ်
+        if lang == "en":
+            period_str = f"For the year ended {format_date_ordinal(period_end)}"
+        else:
+            period_str = f"ကာလကုန်: {format_date_ordinal(period_end)}"
         table_html = _render_cash_flow_html(data, lang)
-
+    
     # ⭐ Trading PL အတွက် Column 5 ခု၊ ကျန်တာအတွက် Column 3 ခု သတ်မှတ်မယ်
-        # ⭐ Trading PL အတွက် Column 5 ခု၊ ကျန်တာအတွက် Column 3 ခု သတ်မှတ်မယ်
     col_count = 5 if statement_type == "trading_pl" else 3
     th_amounts = ""
     if col_count == 5:
@@ -982,6 +1014,7 @@ def generate_pdf(
             .header h1 {{ font-size: 16pt; font-weight: bold; color: #1f4788; margin: 0; }}
             .header h2 {{ font-size: 13pt; font-weight: bold; margin: 5px 0 0 0; }}
             .header .period {{ font-size: 10pt; color: #666; margin-top: 5px; }}
+            .header .business-type {{ font-size: 10pt; color: #555; margin-top: 3px; font-weight: bold; }}
 
             hr {{ border: 1px solid #1f4788; margin-bottom: 10px; }}
 
@@ -1023,7 +1056,7 @@ def generate_pdf(
         </style>
     </head>
     <body>
-        {_build_html_header(client_name, titles[statement_type], period_str)}
+        {_build_html_header(client_name, titles[statement_type], period_str, business_type)}
         <hr>
         <table>
             <thead>
