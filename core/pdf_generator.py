@@ -798,55 +798,76 @@ def _render_cash_flow_html(data: Dict[str, Any], lang: str) -> str:
         sr_counter += 1
         return s
 
+    # --- A. OPERATING ACTIVITIES ---
     html += f'<tr class="section-header"><td colspan="3">{get_pdf_text(lang, "cf_op_title")}</td></tr>'
+    
     net_profit = parse_number(data.get("net_profit", 0))
+    retain_change = parse_number(data.get("retain_earning_change", 0))
+    amortization = parse_number(data.get("amortization", 0))
     dep = parse_number(data.get("depreciation", 0))
+    
     html += _build_html_row(get_sr(), get_pdf_text(lang, "cf_net_profit"), net_profit)
+    html += _build_html_row(get_sr(), "Increase in Retain Earning", retain_change)
+    html += _build_html_row(get_sr(), "Amortization", amortization)
     html += _build_html_row(get_sr(), get_pdf_text(lang, "cf_depreciation"), dep)
 
-    op_profit = net_profit + dep
+    op_profit = net_profit + retain_change + amortization + dep
     html += _build_html_row("", get_pdf_text(lang, "cf_op_profit"), op_profit, is_subtotal=True)
 
-    inv_chg = -parse_number(data.get("change_inventories", 0))
-    rec_chg = -parse_number(data.get("change_receivable", 0))
+    # --- B. WORKING CAPITAL CHANGES ---
+    html += f'<tr class="section-header"><td colspan="3">B. WORKING CAPITAL CHANGES</td></tr>'
+    
+    inv_chg = parse_number(data.get("change_inventories", 0))
+    rec_chg = parse_number(data.get("change_receivable", 0))
     pay_chg = parse_number(data.get("change_payable", 0))
-    wc_chg = inv_chg + rec_chg + pay_chg
+    prep_chg = parse_number(data.get("change_prepayment", 0))
+    
     if inv_chg != 0:
-        html += _build_html_row(get_sr(), get_pdf_text(lang, "cf_inv_change"), inv_chg, is_deduction=(inv_chg < 0))
+        html += _build_html_row(get_sr(), "Increase/Decrease in Inventories", inv_chg, is_deduction=(inv_chg < 0))
     if rec_chg != 0:
-        html += _build_html_row(get_sr(), get_pdf_text(lang, "cf_rec_change"), rec_chg, is_deduction=(rec_chg < 0))
+        html += _build_html_row(get_sr(), "Increase/Decrease in A/C Receivable", rec_chg, is_deduction=(rec_chg < 0))
     if pay_chg != 0:
-        html += _build_html_row(get_sr(), get_pdf_text(lang, "cf_pay_change"), pay_chg, is_deduction=(pay_chg < 0))
+        html += _build_html_row(get_sr(), "Increase/Decrease in Creditors/A/P", pay_chg, is_deduction=(pay_chg < 0))
+    if prep_chg != 0:  # ⭐ ဒါလေး ထပ်ထည့်
+        html += _build_html_row(get_sr(), "Increase/Decrease in Prepayment", prep_chg, is_deduction=(prep_chg < 0))
 
-    net_op = op_profit + wc_chg
-    html += _build_html_row("", get_pdf_text(lang, "cf_net_op"), net_op, is_total=True)
+    total_wc_change = inv_chg + rec_chg + pay_chg + prep_chg
+    html += _build_html_row("", "Cash used in / generated from operation", total_wc_change, is_subtotal=True, is_deduction=(total_wc_change < 0))
+    
+    # Net Cash from Operation (A + B)
+    net_op = op_profit + total_wc_change
+    html += _build_html_row("", get_pdf_text(lang, "cf_net_op"), net_op, is_total=True, is_deduction=(net_op < 0))
 
-    html += f'<tr class="section-header"><td colspan="3">{get_pdf_text(lang, "cf_inv_title")}</td></tr>'
-    invest_fa = -parse_number(data.get("investing_purchase_fa", 0))
+    # --- C. INVESTING ACTIVITIES ---
+    html += f'<tr class="section-header"><td colspan="3">C. CASH FLOW FROM INVESTING ACTIVITIES</td></tr>'
+    invest_fa = parse_number(data.get("investing_purchase_fa", 0))
     if invest_fa != 0:
-        html += _build_html_row(get_sr(), get_pdf_text(lang, "cf_invest_fa"), invest_fa, is_deduction=True)
-    html += _build_html_row("", get_pdf_text(lang, "cf_net_investing"), invest_fa, is_total=True)
+        html += _build_html_row(get_sr(), "Purchase of Fixed Assets", invest_fa, is_deduction=(invest_fa < 0))
+    
+    net_investing = invest_fa
+    html += _build_html_row("", "Net Cash from Investing", net_investing, is_total=True, is_deduction=(net_investing < 0))
 
-    html += f'<tr class="section-header"><td colspan="3">{get_pdf_text(lang, "cf_fin_title")}</td></tr>'
-    fin_loan = parse_number(data.get("financing_loan_increase", 0))
-    fin_draw = -parse_number(data.get("financing_drawing", 0))
-    if fin_loan != 0:
-        html += _build_html_row(get_sr(), get_pdf_text(lang, "cf_fin_loan"), fin_loan)
+    # --- D. FINANCING ACTIVITIES ---
+    html += f'<tr class="section-header"><td colspan="3">D. CASH FLOW FROM FINANCING ACTIVITIES</td></tr>'
+    fin_draw = parse_number(data.get("financing_drawing", 0))
     if fin_draw != 0:
-        html += _build_html_row(get_sr(), get_pdf_text(lang, "cf_fin_draw"), fin_draw, is_deduction=True)
-    net_fin = fin_loan + fin_draw
-    html += _build_html_row("", get_pdf_text(lang, "cf_net_financing"), net_fin, is_total=True)
+        html += _build_html_row(get_sr(), "Drawing", fin_draw, is_deduction=(fin_draw < 0))
+    
+    net_financing = fin_draw
+    html += _build_html_row("", "Net Cash from Financing", net_financing, is_total=True, is_deduction=(net_financing < 0))
 
+    # --- CASH SUMMARY ---
     html += f'<tr class="section-header"><td colspan="3">{get_pdf_text(lang, "cf_summary_title")}</td></tr>'
-    net_chg = net_op + invest_fa + net_fin
+    
+    net_chg = net_op + net_investing + net_financing
     open_cash = parse_number(data.get("opening_cash", 0))
     close_cash = open_cash + net_chg
-    html += _build_html_row("", get_pdf_text(lang, "cf_net_change"), net_chg, is_subtotal=True)
+    
+    html += _build_html_row("", get_pdf_text(lang, "cf_net_change"), net_chg, is_subtotal=True, is_deduction=(net_chg < 0))
     html += _build_html_row(get_sr(), get_pdf_text(lang, "cf_opening_cash"), open_cash)
     html += _build_html_row("", get_pdf_text(lang, "cf_closing_cash"), close_cash, is_total=True)
 
     return html
-
 
 # ============================================================
 # 3. MAIN PUBLIC API
