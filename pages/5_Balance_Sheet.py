@@ -331,11 +331,11 @@ with col3:
     if is_balanced:
         check_color = "#43e97b"
         check_icon = "✓"
-        check_text = "ဟုန်းချင်း ကိုက်ညီပါသည်" if st.session_state.get("language") == "my" else "Balanced"
+        check_text = "ဟန်ချက်ကိုက်ညီပါသည်" if st.session_state.get("language") == "my" else "Balanced"
     else:
         check_color = "#f5576c"
         check_icon = "✗"
-        check_text = "ဟုန်းချင်း မကိုက်ညီပါ" if st.session_state.get("language") == "my" else "Not Balanced"
+        check_text = "ဟန်ချက်မကိုက်ညီပါ" if st.session_state.get("language") == "my" else "Not Balanced"
 
     st.markdown(
         f"""
