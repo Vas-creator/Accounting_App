@@ -62,7 +62,7 @@ PDF_TRANSLATIONS = {
         "production_cost": "ကုန်ထုတ်လုပ်မှု ကုန်ကျစရိတ် (Production Cost)",
 
         "trading_acc_title": "က။ အရောင်းအဝယ် စာရင်း (Trading Account)",
-        "cash_sales": "ငွေသား အရောင်း",
+        "cash_sales": "အရောင်း",
         "credit_sales": "အကြွေး အရောင်း",
         "less_sales_return": "အရောင်းပြန်အမ်း နုတ်",
         "net_sales": "အရောင်း စုစုပေါင်း (Revenue)",
@@ -178,7 +178,7 @@ PDF_TRANSLATIONS = {
         "production_cost": "Production Cost",
 
         "trading_acc_title": "A. Trading Account",
-        "cash_sales": "Cash Sales",
+        "cash_sales": "Sales",
         "credit_sales": "Credit Sales",
         "less_sales_return": "Less: Sales Returns",
         "net_sales": "Total Revenue",
@@ -206,14 +206,14 @@ PDF_TRANSLATIONS = {
         "ca_advance": "Advance Payments",
         "ca_cash": "Cash",
         "current_assets_total": "Total Current Assets",
-        "bs_fa_title": "2. Fixed Assets",
+        "bs_fa_title": "2. Non Current Assets (Less: Depreciation)",
         "nca_land": "Land",
         "nca_building": "Building",
         "nca_machine": "Machine",
         "nca_furniture": "Furniture",
         "nca_vehicle": "Vehicle",
         "less_depreciation": "Less: Depreciation",
-        "fixed_assets_total": "Total Fixed Assets",
+        "fixed_assets_total": "Total Non Current Assets",
         "total_assets": "TOTAL ASSETS",
         "bs_liab_title": "LIABILITIES",
         "bs_cl_title": "1. Current Liabilities",
@@ -602,8 +602,8 @@ def _render_trading_pl_html(t: Dict[str, Any], lang: str, data: Dict[str, Any]) 
     
     if show_revenue.get("cash_sales", True):
         html += _build_row_5(get_sr(), get_pdf_text(lang, "cash_sales"), "", format_number(sales["cash_sales"]["value"]), "")
-    if show_revenue.get("credit_sales", True):
-        html += _build_row_5(get_sr(), get_pdf_text(lang, "credit_sales"), "", format_number(sales["credit_sales"]["value"]), "")
+    # if show_revenue.get("credit_sales", True):
+        # html += _build_row_5(get_sr(), get_pdf_text(lang, "credit_sales"), "", format_number(sales["credit_sales"]["value"]), "")
     if show_revenue.get("sales_return", True):
         html += _build_row_5(get_sr(), get_pdf_text(lang, "less_sales_return"), "", f"({format_number(sales['less_sales_return']['value'])})", "")
 
