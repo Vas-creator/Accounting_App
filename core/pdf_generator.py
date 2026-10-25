@@ -84,13 +84,13 @@ PDF_TRANSLATIONS = {
         "net_profit": "အသားတင် အမြတ် (Net Profit)",
 
         "bs_assets_title": "ပိုင်ဆိုင်မှုများ (ASSETS)",
-        "bs_ca_title": "၁။ လက်ရှိ ပိုင်ဆိုင်မှုများ",
+        "bs_ca_title": "လက်ရှိ ပိုင်ဆိုင်မှုများ",
         "ca_inventories": "ကုန်ပစ္စည်းလက်ကျန်",
         "ca_receivable": "ရရန်ကျန်ငွေ",
         "ca_advance": "ကြိုတင်ပေးငွေ",
         "ca_cash": "လက်ထဲ/ဘဏ် ငွေသား",
         "current_assets_total": "လက်ရှိ ပိုင်ဆိုင်မှု စုစုပေါင်း",
-        "bs_fa_title": "၂။ လက်ရှိမဟုတ်သော ပိုင်ဆိုင်မှုများ (Non Current Assets)",
+        "bs_fa_title": "လက်ရှိမဟုတ်သော ပိုင်ဆိုင်မှုများ (Non Current Assets)",
         "nca_land": "မြေ",
         "nca_building": "အဆောက်အအုံ",
         "nca_machine": "စက်ပစ္စည်း",
@@ -100,12 +100,12 @@ PDF_TRANSLATIONS = {
         "fixed_assets_total": "ပုံသေ ပိုင်ဆိုင်မှု စုစုပေါင်း",
         "total_assets": "ပိုင်ဆိုင်မှု စုစုပေါင်း (TOTAL ASSETS)",
         "bs_liab_title": "အကြွေးများ (LIABILITIES)",
-        "bs_cl_title": "၁။ လက်ရှိ အကြွေးများ",
+        "bs_cl_title": "လက်ရှိ အကြွေးများ",
         "liab_payable": "ပေးရန်ကျန်ငွေ",
         "liab_bank_loan": "ဘဏ် ချေးငွေ",
         "current_liabilities_total": "လက်ရှိ အကြွေး စုစုပေါင်း",
         "total_liabilities": "အကြွေး စုစုပေါင်း",
-        "bs_cap_title": "အရင်း ငွေ (CAPITAL)",
+        "bs_cap_title": "အရင်းငွေ (CAPITAL)",
         "eq_capital": "အရင်း",
         "eq_retain": "စုဆောင်း အမြတ်",
         "eq_profit": "ယခုနှစ် အမြတ်",
@@ -200,13 +200,13 @@ PDF_TRANSLATIONS = {
         "net_profit": "Net Profit",
 
         "bs_assets_title": "ASSETS",
-        "bs_ca_title": "1. Current Assets",
+        "bs_ca_title": "Current Assets",
         "ca_inventories": "Inventories",
         "ca_receivable": "A/C Receivable",
         "ca_advance": "Advance Payments",
         "ca_cash": "Cash",
         "current_assets_total": "Total Current Assets",
-        "bs_fa_title": "2. Non Current Assets (Less: Depreciation)",
+        "bs_fa_title": "Non Current Assets (Less: Depreciation)",
         "nca_land": "Land",
         "nca_building": "Building",
         "nca_machine": "Machine",
@@ -216,7 +216,7 @@ PDF_TRANSLATIONS = {
         "fixed_assets_total": "Total Non Current Assets",
         "total_assets": "TOTAL ASSETS",
         "bs_liab_title": "LIABILITIES",
-        "bs_cl_title": "1. Current Liabilities",
+        "bs_cl_title": "Current Liabilities",
         "liab_payable": "A/C Payable",
         "liab_bank_loan": "Bank Loan",
         "current_liabilities_total": "Total Current Liabilities",
@@ -730,6 +730,7 @@ def _render_balance_sheet_html(t: Dict[str, Any], lang: str, data: Dict[str, Any
         sr_counter += 1
         return s
 
+    # Column ၂ ခု အတွက် Row ဆောက်တဲ့ Function
     def _build_row_4(sr, label, amt1="", amt2="", css="", is_bold=False):
         label_style = "font-weight: bold;" if is_bold else ""
         return f"""
@@ -745,10 +746,13 @@ def _render_balance_sheet_html(t: Dict[str, Any], lang: str, data: Dict[str, Any
     show_equity = data.get("_show_bs_equity", {})
     show_liab = data.get("_show_bs_liab", {})
 
+    # ==================== ASSETS ====================
     html += f'<tr class="section-header"><td colspan="4">{get_pdf_text(lang, "bs_assets_title")}</td></tr>'
 
-    # --- 1. Fixed Assets ---
-    html += f'<tr class="sub-section"><td colspan="4">{get_pdf_text(lang, "bs_fa_title")}</td></tr>'
+    # --- A. Non Current Assets ---
+    total_nca_val = t["assets"]["fixed_assets"]["fixed_assets_total"]
+    html += f'<tr class="sub-section"><td colspan="4">A. {get_pdf_text(lang, "bs_fa_title")}</td></tr>'
+
     fa = t["assets"]["fixed_assets"]["items"]
     for k, item in fa.items():
         if show_assets.get(k, True):
@@ -757,24 +761,23 @@ def _render_balance_sheet_html(t: Dict[str, Any], lang: str, data: Dict[str, Any
             if is_ded:
                 val_str = f"({val_str})"
             html += _build_row_4(get_sr(), get_pdf_text(lang, k), val_str, "")
-    
-    html += _build_row_4("", get_pdf_text(lang, "fixed_assets_total"), "", format_number(t["assets"]["fixed_assets"]["fixed_assets_total"]), css="subtotal-row", is_bold=True)
 
-    # --- 2. Current Assets ---
-    html += f'<tr class="sub-section"><td colspan="4">{get_pdf_text(lang, "bs_ca_title")}</td></tr>'
+    # --- B. Current Assets ---
+    total_ca_val = t["assets"]["current_assets"]["current_assets_total"]
+    html += f'<tr class="sub-section"><td colspan="4">B. {get_pdf_text(lang, "bs_ca_title")}</td></tr>'
+
     ca = t["assets"]["current_assets"]["items"]
     for k, item in ca.items():
         if show_assets.get(k, True):
             html += _build_row_4(get_sr(), get_pdf_text(lang, k), format_number(item["value"]), "")
-    
-    html += _build_row_4("", get_pdf_text(lang, "current_assets_total"), "", format_number(t["assets"]["current_assets"]["current_assets_total"]), css="subtotal-row", is_bold=True)
 
+    # Total Assets
     html += _build_row_4("", get_pdf_text(lang, "total_assets"), "", format_number(t["assets"]["total_assets"]["value"]), css="total-row", is_bold=True)
 
-    # --- 3. Capital ---
+    # ==================== CAPITAL ====================
     html += f'<tr class="section-header"><td colspan="4">{get_pdf_text(lang, "bs_cap_title")}</td></tr>'
     cap = t["capital"]["items"]
-    
+
     if show_equity.get("eq_capital", True):
         html += _build_row_4(get_sr(), get_pdf_text(lang, "eq_capital"), format_number(cap["eq_capital"]["value"]), "")
     if show_equity.get("eq_retain", True):
@@ -783,23 +786,25 @@ def _render_balance_sheet_html(t: Dict[str, Any], lang: str, data: Dict[str, Any
         html += _build_row_4(get_sr(), get_pdf_text(lang, "eq_profit"), format_number(cap["eq_profit"]["value"]), "")
     if show_equity.get("eq_drawing", True):
         html += _build_row_4(get_sr(), get_pdf_text(lang, "eq_drawing"), f"({format_number(cap['eq_drawing']['value'])})", "")
-    
+
     html += _build_row_4("", get_pdf_text(lang, "capital_total"), "", format_number(t["capital"]["capital_total"]), css="subtotal-row", is_bold=True)
 
-    # --- 4. Liabilities ---
+    # ==================== LIABILITIES ====================
     html += f'<tr class="section-header"><td colspan="4">{get_pdf_text(lang, "bs_liab_title")}</td></tr>'
-    html += f'<tr class="sub-section"><td colspan="4">{get_pdf_text(lang, "bs_cl_title")}</td></tr>'
+    html += f'<tr class="sub-section"><td colspan="4">C. {get_pdf_text(lang, "bs_cl_title")}</td></tr>'
+
     cl = t["liabilities"]["current_liabilities"]["items"]
     for k, item in cl.items():
         if show_liab.get(k, True):
             html += _build_row_4(get_sr(), get_pdf_text(lang, k), format_number(item["value"]), "")
-    
+
     html += _build_row_4("", get_pdf_text(lang, "current_liabilities_total"), "", format_number(t["liabilities"]["current_liabilities"]["current_liabilities_total"]), css="subtotal-row", is_bold=True)
 
     html += _build_row_4("", get_pdf_text(lang, "total_liabilities"), "", format_number(t["liabilities"]["total_liabilities"]["value"]), css="total-row", is_bold=True)
 
     html += _build_row_4("", get_pdf_text(lang, "liabilities_and_capital"), "", format_number(t["balance_check"]["liabilities_and_capital"]["value"]), css="total-row", is_bold=True)
 
+    # Balance Check
     diff = t["balance_check"]["difference"]
     is_balanced = t["balance_check"]["is_balanced"]
     if is_balanced:
