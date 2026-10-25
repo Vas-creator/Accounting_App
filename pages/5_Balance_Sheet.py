@@ -188,6 +188,22 @@ if "bs_data" not in st.session_state:
     else:
         st.session_state.bs_data = {}
 
+# ===========================================================
+# SESSION STATE FOR SHOW/HIDE ASSETS, EQUITY, LIABILITIES
+# ===========================================================
+
+if "show_bs_assets" not in st.session_state:
+    st.session_state.show_bs_assets = {
+        "ca_inventories": True, "ca_receivable": True, "ca_advance": True, "ca_cash": True,
+        "nca_land": True, "nca_building": True, "nca_machine": True, "nca_furniture": True, "nca_vehicle": True
+    }
+if "show_bs_equity" not in st.session_state:
+    st.session_state.show_bs_equity = {
+        "eq_capital": True, "eq_retain": True, "eq_profit": True, "eq_drawing": True
+    }
+if "show_bs_liab" not in st.session_state:
+    st.session_state.show_bs_liab = {"liab_bank_loan": True, "liab_payable": True}
+
 # ============================================================
 # TRY TO PULL TRADING PL DATA
 # ============================================================
@@ -213,7 +229,7 @@ except Exception:
 # HELPER FUNCTIONS
 # ============================================================
 
-def num_input(label: str, key: str, is_deduction: bool = False, default: float = None, help_text: str = "") -> float:
+def num_input(label: str, key: str, is_deduction: bool = False, default: float = None, help_text: str = "", state_key: str = None) -> float:
     if default is None:
         value = st.session_state.bs_data.get(key, 0.0)
     else:
@@ -221,17 +237,37 @@ def num_input(label: str, key: str, is_deduction: bool = False, default: float =
 
     prefix = "➖ " if is_deduction else ""
     
-    result = st.number_input(
-        f"{prefix}{label}",
-        value=int(value) if value else 0,
-        min_value=0,
-        step=1000,
-        format="%d",
-        key=f"bs_{key}",
-        help=help_text,
-    )
-    st.session_state.bs_data[key] = result
-    return float(result)
+    # ⭐ Checkbox ပါအောင် ပြင်မယ်
+    if state_key:
+        col_show, col_input = st.columns([0.5, 9.5])
+        with col_show:
+            default_show = st.session_state.get(state_key, {}).get(key, True)
+            show = st.checkbox("", value=default_show, key=f"show_bs_{key}", label_visibility="collapsed")
+            st.session_state[state_key][key] = show
+        
+        with col_input:
+            if show:
+                result = st.number_input(
+                    f"{prefix}{label}",
+                    value=int(value) if value else 0,
+                    min_value=0, step=1000, format="%d",
+                    key=f"bs_{key}", help=help_text,
+                )
+                st.session_state.bs_data[key] = result
+                return float(result)
+            else:
+                st.session_state.bs_data[key] = 0.0
+                return 0.0
+    else:
+        # Checkbox မပါရင် ရိုးရိုးပဲ
+        result = st.number_input(
+            f"{prefix}{label}",
+            value=int(value) if value else 0,
+            min_value=0, step=1000, format="%d",
+            key=f"bs_{key}", help=help_text,
+        )
+        st.session_state.bs_data[key] = result
+        return float(result)
 
 def subtotal_box(label: str, value: float, color: str = "#1976d2"):
     st.markdown(
@@ -254,21 +290,21 @@ col1, col2, col3 = st.columns(3)
 
 with col1:
     st.markdown(f'<h3 style="color: #2e7d32; font-size: 1.15rem; border-bottom: 2px solid #43e97b; padding-bottom: 0.3rem;">{"၁။ ပုံသေ ပိုင်ဆိုင်မှုများ" if st.session_state.get("language") == "my" else "1. Fixed Assets"}</h3>', unsafe_allow_html=True)
-    nca_land = num_input("မြေ (Land)" if st.session_state.get("language") == "my" else "Land", "nca_land")
-    nca_building = num_input("အဆောက်အအုံ (Building)" if st.session_state.get("language") == "my" else "Building", "nca_building")
-    nca_machine = num_input("စက်ပစ္စည်း (Machine)" if st.session_state.get("language") == "my" else "Machine", "nca_machine")
-    nca_furniture = num_input("ပရိဘောဂ (Furniture)" if st.session_state.get("language") == "my" else "Furniture", "nca_furniture")
-    nca_vehicle = num_input("ယာဉ် (Vehicle)" if st.session_state.get("language") == "my" else "Vehicle", "nca_vehicle")
+    nca_land = num_input("မြေ (Land)", "nca_land", state_key="show_bs_assets")
+    nca_building = num_input("အဆောက်အအုံ (Building)", "nca_building", state_key="show_bs_assets")
+    nca_machine = num_input("စက်ပစ္စည်း (Machine)", "nca_machine", state_key="show_bs_assets")
+    nca_furniture = num_input("ပရိဘောဂ (Furniture)", "nca_furniture", state_key="show_bs_assets")
+    nca_vehicle = num_input("ယာဉ် (Vehicle)", "nca_vehicle", state_key="show_bs_assets")
 
     total_nca = nca_land + nca_building + nca_machine + nca_furniture + nca_vehicle
     subtotal_box("ပုံသေ ပိုင်ဆိုင်မှု စုစုပေါင်း" if st.session_state.get("language") == "my" else "Total Fixed Assets", total_nca, "#2e7d32")
     st.markdown("<br>", unsafe_allow_html=True)
 
     st.markdown(f'<h3 style="color: #2e7d32; font-size: 1.15rem; border-bottom: 2px solid #43e97b; padding-bottom: 0.3rem;">{"၂။ လက်ရှိ ပိုင်ဆိုင်မှုများ" if st.session_state.get("language") == "my" else "2. Current Assets"}</h3>', unsafe_allow_html=True)
-    ca_inventories = num_input("ကုန်ပစ္စည်းလက်ကျန် (Inventories)" if st.session_state.get("language") == "my" else "Inventories", "ca_inventories")
-    ca_receivable = num_input("ရရန်ကျန်ငွေ (A/C Receivable)" if st.session_state.get("language") == "my" else "A/C Receivable", "ca_receivable")
-    ca_advance = num_input("ကြိုတင်ပေးငွေ (Advance Payments)" if st.session_state.get("language") == "my" else "Advance Payments", "ca_advance")
-    ca_cash = num_input("လက်ထဲ/ဘဏ် ငွေသား (Cash)" if st.session_state.get("language") == "my" else "Cash", "ca_cash")
+    ca_inventories = num_input("ကုန်ပစ္စည်းလက်ကျန် (Inventories)", "ca_inventories", state_key="show_bs_assets")
+    ca_receivable = num_input("ရရန်ကျန်ငွေ (A/C Receivable)", "ca_receivable", state_key="show_bs_assets")
+    ca_advance = num_input("ကြိုတင်ပေးငွေ (Advance Payments)", "ca_advance", state_key="show_bs_assets")
+    ca_cash = num_input("လက်ထဲ/ဘဏ် ငွေသား (Cash)", "ca_cash", state_key="show_bs_assets")
 
     total_ca = ca_inventories + ca_receivable + ca_advance + ca_cash
     subtotal_box("လက်ရှိ ပိုင်ဆိုင်မှု စုစုပေါင်း" if st.session_state.get("language") == "my" else "Total Current Assets", total_ca, "#2e7d32")
@@ -287,8 +323,9 @@ with col1:
 
 with col2:
     st.markdown(f'<h3 style="color: #c2185b; font-size: 1.15rem; border-bottom: 2px solid #f093fb; padding-bottom: 0.3rem;">{"၃။ အရင်း ငွေ (Equity)" if st.session_state.get("language") == "my" else "3. Equity"}</h3>', unsafe_allow_html=True)
-    eq_capital = num_input("အရင်း (Capital)" if st.session_state.get("language") == "my" else "Capital", "eq_capital")
-    eq_retain = num_input("စုဆောင်း အမြတ် (Retain Earning)" if st.session_state.get("language") == "my" else "Retain Earning", "eq_retain")
+    # eq_capital = num_input("အရင်း (Capital)" if st.session_state.get("language") == "my" else "Capital", "eq_capital")
+    eq_capital = num_input("အရင်း (Capital)", "eq_capital", state_key="show_bs_equity")
+    eq_retain = num_input("စုဆောင်း အမြတ် (Retain Earning)", "eq_retain", state_key="show_bs_equity")
 
     eq_profit = st.number_input(
         "📈 ယခုနှစ် အမြတ် (Profit for the year) — Trading မှ" if st.session_state.get("language") == "my" else "📈 Profit for the year (from Trading)",
@@ -307,8 +344,9 @@ with col2:
     st.markdown("<br>", unsafe_allow_html=True)
 
     st.markdown(f'<h3 style="color: #c2185b; font-size: 1.15rem; border-bottom: 2px solid #f093fb; padding-bottom: 0.3rem;">{"၄။ အကြွေးများ (Liabilities)" if st.session_state.get("language") == "my" else "4. Liabilities"}</h3>', unsafe_allow_html=True)
-    liab_bank_loan = num_input("ဘဏ် ချေးငွေ (Bank Loan)" if st.session_state.get("language") == "my" else "Bank Loan", "liab_bank_loan")
-    liab_payable = num_input("ပေးရန်ကျန်ငွေ (A/C Payable)" if st.session_state.get("language") == "my" else "A/C Payable", "liab_payable")
+    # liab_bank_loan = num_input("ဘဏ် ချေးငွေ (Bank Loan)" if st.session_state.get("language") == "my" else "Bank Loan", "liab_bank_loan")
+    liab_bank_loan = num_input("ဘဏ် ချေးငွေ (Bank Loan)", "liab_bank_loan", state_key="show_bs_liab")
+    liab_payable = num_input("ပေးရန်ကျန်ငွေ (A/C Payable)", "liab_payable", state_key="show_bs_liab")
 
     total_liab = liab_bank_loan + liab_payable
     subtotal_box("အကြွေး စုစုပေါင်း" if st.session_state.get("language") == "my" else "Total Liabilities", total_liab, "#c2185b")
@@ -417,15 +455,20 @@ with col1:
 
 with col2:
     if st.button("📄 PDF", use_container_width=True):
-        play_click_sound()  # ⭐ ဒါလေး ထည့်ပါ
         try:
+            # ⭐ Checkbox အနေအထားတွေ ထည့်မယ်
+            pdf_data = dict(st.session_state.bs_data)
+            pdf_data["_show_bs_assets"] = st.session_state.show_bs_assets
+            pdf_data["_show_bs_equity"] = st.session_state.show_bs_equity
+            pdf_data["_show_bs_liab"] = st.session_state.show_bs_liab
+
             pdf_bytes = generate_pdf(
                 statement_type="balance_sheet",
                 client_name=client["name"],
-                data=st.session_state.bs_data,
+                data=pdf_data,
                 as_at_date=st.session_state.bs_date,
                 lang=st.session_state.language,
-                business_type=client.get("business_type", ""),  # ⭐ ဒါလေး ထည့်မယ်
+                business_type=client.get("business_type", ""),
             )
             
             st.download_button(

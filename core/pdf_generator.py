@@ -90,7 +90,7 @@ PDF_TRANSLATIONS = {
         "ca_advance": "ကြိုတင်ပေးငွေ",
         "ca_cash": "လက်ထဲ/ဘဏ် ငွေသား",
         "current_assets_total": "လက်ရှိ ပိုင်ဆိုင်မှု စုစုပေါင်း",
-        "bs_fa_title": "၂။ ပုံသေ ပိုင်ဆိုင်မှုများ",
+        "bs_fa_title": "၂။ လက်ရှိမဟုတ်သော ပိုင်ဆိုင်မှုများ (Non Current Assets)",
         "nca_land": "မြေ",
         "nca_building": "အဆောက်အအုံ",
         "nca_machine": "စက်ပစ္စည်း",
@@ -720,7 +720,7 @@ def _render_trading_pl_html(t: Dict[str, Any], lang: str, data: Dict[str, Any]) 
     
     return html
 
-def _render_balance_sheet_html(t: Dict[str, Any], lang: str) -> str:
+def _render_balance_sheet_html(t: Dict[str, Any], lang: str, data: Dict[str, Any]) -> str:
     html = ""
     sr_counter = 1
 
@@ -741,54 +741,63 @@ def _render_balance_sheet_html(t: Dict[str, Any], lang: str) -> str:
         </tr>
         """
 
+    show_assets = data.get("_show_bs_assets", {})
+    show_equity = data.get("_show_bs_equity", {})
+    show_liab = data.get("_show_bs_liab", {})
+
     html += f'<tr class="section-header"><td colspan="4">{get_pdf_text(lang, "bs_assets_title")}</td></tr>'
 
-    # --- 1. Fixed Assets (အပေါ်မှာ ထားမယ်) ---
+    # --- 1. Fixed Assets ---
     html += f'<tr class="sub-section"><td colspan="4">{get_pdf_text(lang, "bs_fa_title")}</td></tr>'
     fa = t["assets"]["fixed_assets"]["items"]
     for k, item in fa.items():
-        is_ded = item.get("is_deduction", False)
-        val_str = format_number(item["value"])
-        if is_ded:
-            val_str = f"({val_str})"
-        html += _build_row_4(get_sr(), get_pdf_text(lang, k), val_str, "")
+        if show_assets.get(k, True):
+            is_ded = item.get("is_deduction", False)
+            val_str = format_number(item["value"])
+            if is_ded:
+                val_str = f"({val_str})"
+            html += _build_row_4(get_sr(), get_pdf_text(lang, k), val_str, "")
     
     html += _build_row_4("", get_pdf_text(lang, "fixed_assets_total"), "", format_number(t["assets"]["fixed_assets"]["fixed_assets_total"]), css="subtotal-row", is_bold=True)
 
-    # --- 2. Current Assets (အောက်မှာ ထားမယ်) ---
+    # --- 2. Current Assets ---
     html += f'<tr class="sub-section"><td colspan="4">{get_pdf_text(lang, "bs_ca_title")}</td></tr>'
     ca = t["assets"]["current_assets"]["items"]
     for k, item in ca.items():
-        html += _build_row_4(get_sr(), get_pdf_text(lang, k), format_number(item["value"]), "")
+        if show_assets.get(k, True):
+            html += _build_row_4(get_sr(), get_pdf_text(lang, k), format_number(item["value"]), "")
     
     html += _build_row_4("", get_pdf_text(lang, "current_assets_total"), "", format_number(t["assets"]["current_assets"]["current_assets_total"]), css="subtotal-row", is_bold=True)
 
-    # Total Assets
     html += _build_row_4("", get_pdf_text(lang, "total_assets"), "", format_number(t["assets"]["total_assets"]["value"]), css="total-row", is_bold=True)
 
-    # --- 3. Capital (အပေါ်မှာ ထားမယ်) ---
+    # --- 3. Capital ---
     html += f'<tr class="section-header"><td colspan="4">{get_pdf_text(lang, "bs_cap_title")}</td></tr>'
     cap = t["capital"]["items"]
     
-    html += _build_row_4(get_sr(), get_pdf_text(lang, "eq_capital"), format_number(cap["eq_capital"]["value"]), "")
-    html += _build_row_4(get_sr(), get_pdf_text(lang, "eq_retain"), format_number(cap["eq_retain"]["value"]), "")
-    html += _build_row_4(get_sr(), get_pdf_text(lang, "eq_profit"), format_number(cap["eq_profit"]["value"]), "")
-    html += _build_row_4(get_sr(), get_pdf_text(lang, "eq_drawing"), f"({format_number(cap['eq_drawing']['value'])})", "")
+    if show_equity.get("eq_capital", True):
+        html += _build_row_4(get_sr(), get_pdf_text(lang, "eq_capital"), format_number(cap["eq_capital"]["value"]), "")
+    if show_equity.get("eq_retain", True):
+        html += _build_row_4(get_sr(), get_pdf_text(lang, "eq_retain"), format_number(cap["eq_retain"]["value"]), "")
+    if show_equity.get("eq_profit", True):
+        html += _build_row_4(get_sr(), get_pdf_text(lang, "eq_profit"), format_number(cap["eq_profit"]["value"]), "")
+    if show_equity.get("eq_drawing", True):
+        html += _build_row_4(get_sr(), get_pdf_text(lang, "eq_drawing"), f"({format_number(cap['eq_drawing']['value'])})", "")
     
     html += _build_row_4("", get_pdf_text(lang, "capital_total"), "", format_number(t["capital"]["capital_total"]), css="subtotal-row", is_bold=True)
 
-    # --- 4. Liabilities (အောက်မှာ ထားမယ်) ---
+    # --- 4. Liabilities ---
     html += f'<tr class="section-header"><td colspan="4">{get_pdf_text(lang, "bs_liab_title")}</td></tr>'
     html += f'<tr class="sub-section"><td colspan="4">{get_pdf_text(lang, "bs_cl_title")}</td></tr>'
     cl = t["liabilities"]["current_liabilities"]["items"]
     for k, item in cl.items():
-        html += _build_row_4(get_sr(), get_pdf_text(lang, k), format_number(item["value"]), "")
+        if show_liab.get(k, True):
+            html += _build_row_4(get_sr(), get_pdf_text(lang, k), format_number(item["value"]), "")
     
     html += _build_row_4("", get_pdf_text(lang, "current_liabilities_total"), "", format_number(t["liabilities"]["current_liabilities"]["current_liabilities_total"]), css="subtotal-row", is_bold=True)
 
     html += _build_row_4("", get_pdf_text(lang, "total_liabilities"), "", format_number(t["liabilities"]["total_liabilities"]["value"]), css="total-row", is_bold=True)
 
-    # Liabilities + Capital
     html += _build_row_4("", get_pdf_text(lang, "liabilities_and_capital"), "", format_number(t["balance_check"]["liabilities_and_capital"]["value"]), css="total-row", is_bold=True)
 
     diff = t["balance_check"]["difference"]
@@ -943,11 +952,8 @@ def generate_pdf(
     elif statement_type == "balance_sheet":
         data["as_at_date"] = as_at_date
         t_res = calculate_balance_sheet(data)
-        if lang == "en":
-            period_str = f"As at {format_date_ordinal(as_at_date)}"
-        else:
-            period_str = f"ရက်စွဲ: {format_date_ordinal(as_at_date)}"
-        table_html = _render_balance_sheet_html(t_res, lang)
+        period_str = f"As at {format_date_ordinal(as_at_date)}" if lang == "en" else f"ရက်စွဲ: {format_date_ordinal(as_at_date)}"
+        table_html = _render_balance_sheet_html(t_res, lang, data)  # ⭐ data ကိုပါ ပို့ပါ
 
     elif statement_type == "cash_flow":
         data["period_end"] = period_end
@@ -1006,7 +1012,7 @@ def generate_pdf(
 
             body {{
                 font-family: 'Pyidaungsu', sans-serif;
-                font-size: 10pt;
+                font-size: 9pt;
                 color: #212121;
             }}
 
@@ -1019,14 +1025,14 @@ def generate_pdf(
             hr {{ border: 1px solid #1f4788; margin-bottom: 10px; }}
 
             table {{ width: 100%; border-collapse: collapse; }}
-            td {{ padding: 4px 8px; }}
+            td {{ padding: 2px 6px; }}
             .sr {{ width: 5%; text-align: center; }}
             .label {{ text-align: left; }}
             .amount {{ text-align: right; }}
 
             .section-header td {{
                 background-color: #e3f2fd; color: #1565c0; font-weight: bold;
-                padding-top: 8px; padding-bottom: 8px;
+                padding-top: 8px; padding-bottom: 4px;
                 border-top: 1px solid #90caf9; border-bottom: 1px solid #90caf9;
             }}
 
