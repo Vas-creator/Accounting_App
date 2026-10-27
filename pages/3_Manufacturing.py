@@ -54,6 +54,9 @@ if not client:
     st.error("❌ ဖောက်သည် မတွေ့ပါ" if st.session_state.get("language", "my") == "my" else "❌ Client not found")
     st.stop()
 
+# ⭐ Client Name မရှိရင် Business Name ကို ယူမယ်
+client_display_name = client.get("name") if client.get("name") else client.get("business_name", "Unknown")
+
 # ============================================================
 # SESSION STATE (ဖောက်သည်ပြောင်းရင် ရှင်းမယ်)
 # ============================================================
@@ -115,7 +118,7 @@ with st.sidebar:
         <div style="background-color: #e3f2fd; padding: 0.8rem; border-radius: 8px; border-left: 4px solid #1565c0;">
             <p style="margin: 0; font-size: 0.85rem; color: #666;">{'ဖောက်သည်' if st.session_state.get('language', 'my') == 'my' else 'Client'}</p>
             <p style="margin: 0.2rem 0 0 0; font-weight: bold; color: #1565c0;">
-                👤 {client['name']}
+                👤 {client_display_name}
             </p>
         </div>
         """,
@@ -133,7 +136,7 @@ st.markdown(
             🏭 {t('pdf_mfg')}
         </h1>
         <p style="margin: 0.5rem 0 0 0; font-size: 0.95rem; opacity: 0.95;">
-            Manufacturing Account — {client['name']}
+            Manufacturing Account — {client_display_name}
         </p>
     </div>
     """,
@@ -257,7 +260,8 @@ def mfg_num_input(label: str, key: str, is_deduction: bool = False, state_key: s
     col_show, col_input = st.columns([0.5, 9.5])
     with col_show:
         default_show = st.session_state.get(state_key, {}).get(key, True)
-        show = st.checkbox("", value=default_show, key=f"mfg_show_{key}", label_visibility="collapsed")
+        # ⭐ label_visibility ဖျက်ထားပါတယ် (Error မတက်အောင်)
+        show = st.checkbox(" ", value=default_show, key=f"mfg_show_{key}")
         st.session_state[state_key][key] = show
     
     with col_input:
@@ -414,7 +418,7 @@ col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     if st.button(t('save'), use_container_width=True, type="primary"):
-        play_click_sound()  # ⭐ ဒါလေး ထည့်ပါ
+        play_click_sound()
         try:
             data_json = json.dumps(st.session_state.mfg_data, ensure_ascii=False)
             db.save_statement(
@@ -431,23 +435,25 @@ with col1:
 
 with col2:
     if st.button("📄 PDF", use_container_width=True):
-        play_click_sound()  # ⭐ ဒါလေး ထည့်ပါ
+        play_click_sound()
         try:
             pdf_data = dict(st.session_state.mfg_data)
             pdf_data["custom_data"] = st.session_state.mfg_custom_data
             
             pdf_bytes = generate_pdf(
                 statement_type="manufacturing",
-                client_name=client["name"],
+                client_name=client_display_name,
+                client_id=client_id, # ⭐ ဒါလေး ထည့်ပါ
+                business_name=client.get("business_name", ""), # ⭐ ဒါလေး ထည့်ပါ
+                business_type=client.get("business_type", ""), 
                 data=pdf_data,
                 period_end=st.session_state.mfg_period,
                 lang=st.session_state.language,
-                business_type=client.get("business_type", ""),  # ⭐ ဒါလေး ထည့်မယ်
             )
             st.download_button(
                 "⬇️ PDF Download",
                 data=pdf_bytes,
-                file_name=f"{client['name']}_Manufacturing_{st.session_state.mfg_period}.pdf",
+                file_name=f"{client_display_name}_Manufacturing_{st.session_state.mfg_period}.pdf",
                 mime="application/pdf",
                 use_container_width=True,
             )
@@ -456,7 +462,7 @@ with col2:
 
 with col3:
     if st.button("🔄 Reset", use_container_width=True):
-        play_click_sound()  # ⭐ ဒါလေး ထည့်ပါ
+        play_click_sound()
         st.session_state.mfg_data = {}
         st.session_state.mfg_custom_data = {
             "direct_materials": [], 
@@ -468,7 +474,7 @@ with col3:
 
 with col4:
     if st.button(t('detail'), use_container_width=True):
-        play_click_sound()  # ⭐ ဒါလေး ထည့်ပါ
+        play_click_sound()
         st.switch_page("pages/2_Client_Detail.py")
 
 # ============================================================
@@ -477,4 +483,4 @@ with col4:
 
 st.divider()
 st.caption(f"📅 {t('period_end')}: {format_date_mm(st.session_state.mfg_period)}")
-st.caption(f"👤 {t('clients')}: {client['name']}")
+st.caption(f"👤 {t('clients')}: {client_display_name}")

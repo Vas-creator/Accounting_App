@@ -591,12 +591,14 @@ with col2:
             pdf_bytes = generate_pdf(
                 statement_type="cash_flow",
                 client_name=client["name"],
+                client_id=st.session_state.get("selected_client_id"), # ⭐ ဒါလေး ထည့်ပါ
+                business_name=client.get("business_name", ""),       # ⭐ ဒါလေး ထည့်ပါ
+                business_type=client.get("business_type", ""),
                 data=pdf_data,
-                period_end=st.session_state.cf_period,
+                period_end=st.session_state.cf_period, # မင်း သတ်မှတ်ထားတဲ့ ရက်စွဲ
                 lang=st.session_state.language,
-                business_type=client.get("business_type", ""),  # ⭐ ဒါလေး ထည့်မယ်
             )
-
+            
             st.download_button(
                 "⬇️ PDF Download",
                 data=pdf_bytes,

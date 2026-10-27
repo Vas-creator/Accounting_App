@@ -51,6 +51,9 @@ if not client:
     st.error("❌ ဖောက်သည် မတွေ့ပါ" if st.session_state.get("language", "my") == "my" else "❌ Client not found")
     st.stop()
 
+# ⭐ Client Name မရှိရင် Business Name ကို ယူမယ်
+client_display_name = client.get("name") if client.get("name") else client.get("business_name", "Unknown")
+
 # ============================================================
 # HELPER FUNCTION FOR SAFE JSON
 # ============================================================
@@ -121,7 +124,7 @@ with st.sidebar:
         <div style="background-color: #e3f2fd; padding: 0.8rem; border-radius: 8px; border-left: 4px solid #1565c0;">
             <p style="margin: 0; font-size: 0.85rem; color: #666;">{'ဖောက်သည်' if st.session_state.get('language', 'my') == 'my' else 'Client'}</p>
             <p style="margin: 0.2rem 0 0 0; font-weight: bold; color: #1565c0;">
-                👤 {client['name']}
+                👤 {client_display_name}
             </p>
         </div>
         """,
@@ -139,7 +142,7 @@ st.markdown(
             📄 {'PDF ထုတ်ယူခြင်း' if st.session_state.get('language', 'my') == 'my' else 'Export PDF'}
         </h1>
         <p style="margin: 0.5rem 0 0 0; font-size: 1rem; opacity: 0.95;">
-            Financial Statements Export — {client['name']}
+            Financial Statements Export — {client_display_name}
         </p>
     </div>
     """,
@@ -292,21 +295,27 @@ with col1:
                     if key == "balance_sheet":
                         pdf_bytes = generate_pdf(
                             statement_type=key,
-                            client_name=client["name"],
+                            client_name=client_display_name,
+                            business_name=client.get("business_name", ""), # ⭐ # ဖြုတ်ပြီး ပြန်ဖွင့်ပါ
+                            business_type=client.get("business_type", ""),  # ⭐ # ဖြုတ်ပြီး ပြန်ဖွင့်ပါ
+                            client_id=client_id, 
                             data=stmt["data"],
-                            as_at_date=stmt["period"],
+                            as_at_date=stmt["period"], # ⭐ ဒီနေရာမှာ as_at_date ဖြစ်ရပါမယ်
                             lang=lang,
                         )
                     else:
                         pdf_bytes = generate_pdf(
                             statement_type=key,
-                            client_name=client["name"],
+                            client_name=client_display_name,
+                            business_name=client.get("business_name", ""), # ⭐ # ဖြုတ်ပြီး ပြန်ဖွင့်ပါ
+                            business_type=client.get("business_type", ""),  # ⭐ # ဖြုတ်ပြီး ပြန်ဖွင့်ပါ
+                            client_id=client_id, 
                             data=stmt["data"],
                             period_end=stmt["period"],
                             lang=lang,
                         )
 
-                    safe_name = client["name"].replace(" ", "_")
+                    safe_name = client_display_name.replace(" ", "_")
                     filename = f"{safe_name}_{key}.pdf"
                     zf.writestr(filename, pdf_bytes)
 
@@ -315,7 +324,7 @@ with col1:
             st.download_button(
                 "⬇️ ZIP ရယူရန်" if st.session_state.get("language") == "my" else "⬇️ Download ZIP",
                 data=zip_bytes,
-                file_name=f"{client['name'].replace(' ', '_')}_FinancialStatements.zip",
+                file_name=f"{client_display_name.replace(' ', '_')}_FinancialStatements.zip",
                 mime="application/zip",
                 use_container_width=True,
                 key="download_zip_btn"
@@ -342,15 +351,14 @@ with col2:
                     data = stmt["data"]
                     rows = []
                     
-                    # ဒေတာတွေကို Row တစ်ခုချင်းစီ အဖြစ် ပြောင်းမယ်
                     for k, v in data.items():
-                        if k.startswith("_"): # အတွင်းကျ Key တွေကို ကျော်မယ်
+                        if k.startswith("_"): 
                             continue
                         
                         label = k.replace("_", " ").title()
                         val = v
                         if isinstance(val, (int, float)):
-                            val = format_number(val) # ကော်မာနဲ့ ပြမယ်
+                            val = format_number(val) 
                         elif isinstance(val, str):
                             try:
                                 val = format_number(float(val))
@@ -361,7 +369,6 @@ with col2:
                     
                     df = pd.DataFrame(rows)
                     
-                    # ⭐ Sheet နာမည်မှာ သုံးလို့မရတဲ့ သင်္ကေတတွေကို ဖယ်ရှားမယ်
                     raw_sheet_name = stmt["label_en"][:31]
                     safe_sheet_name = re.sub(r'[\\/*?:\[\]]', '', raw_sheet_name)
                     sheet_name = safe_sheet_name.strip()
@@ -373,7 +380,7 @@ with col2:
             st.download_button(
                 "⬇️ Excel ရယူရန်" if st.session_state.get("language") == "my" else "⬇️ Download Excel",
                 data=excel_bytes,
-                file_name=f"{client['name'].replace(' ', '_')}_FinancialStatements.xlsx",
+                file_name=f"{client_display_name.replace(' ', '_')}_FinancialStatements.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
                 key="download_excel_btn"
@@ -412,40 +419,55 @@ if st.session_state.get("show_individual"):
             continue
 
         with cols[idx % 2]:
-            try:
-                lang = st.session_state.get("language", "my")
-                
-                if key == "balance_sheet":
-                    pdf_bytes = generate_pdf(
-                        statement_type=key,
-                        client_name=client["name"],
-                        data=stmt["data"],
-                        as_at_date=stmt["period"],
-                        lang=lang,
-                    )
-                else:
-                    pdf_bytes = generate_pdf(
-                        statement_type=key,
-                        client_name=client["name"],
-                        data=stmt["data"],
-                        period_end=stmt["period"],
-                        lang=lang,
-                    )
+            title = stmt["label_my"] if st.session_state.get("language") == "my" else stmt["label_en"]
+            pdf_key = f"pdf_bytes_{key}" # ⭐ ဒီနေရာမှာ pdf_key လို့ သတ်မှတ်ထားပါတယ်
+            
+            # ၁။ PDF ဆောက်တဲ့ ခလုတ်
+            if st.button(f"📄 {title} (ထုတ်ယူရန်)", key=f"gen_{key}", use_container_width=True):
+                try:
+                    lang = st.session_state.get("language", "my")
+                    
+                    if key == "balance_sheet":
+                        pdf_bytes = generate_pdf(
+                            statement_type=key,
+                            client_name=client_display_name,
+                            client_id=client_id, 
+                            business_name=client.get("business_name", ""), 
+                            business_type=client.get("business_type", ""), 
+                            data=stmt["data"],
+                            as_at_date=stmt["period"],
+                            lang=lang,
+                        )
+                    else:
+                        pdf_bytes = generate_pdf(
+                            statement_type=key,
+                            client_name=client_display_name,
+                            client_id=client_id, 
+                            business_name=client.get("business_name", ""), 
+                            business_type=client.get("business_type", ""), 
+                            data=stmt["data"],
+                            period_end=stmt["period"],
+                            lang=lang,
+                        )
+                    
+                    # ⭐ ဆောက်ပြီးသား PDF ကို သိမ်းထားမယ်
+                    st.session_state[pdf_key] = pdf_bytes
+                    st.rerun() 
+                    
+                except Exception as e:
+                    st.error(f"Error: {e}")
 
-                filename = f"{client['name'].replace(' ', '_')}_{key}.pdf"
-                title = stmt["label_my"] if st.session_state.get("language") == "my" else stmt["label_en"]
-
+            # ၂။ သိမ်းထားတဲ့ PDF ရှိရင် Download ခလုတ် ပြမယ်
+            if pdf_key in st.session_state:
+                filename = f"{client_display_name.replace(' ', '_')}_{key}.pdf"
                 st.download_button(
-                    f"{stmt['icon']} {title}",
-                    data=pdf_bytes,
+                    label=f"⬇️ {title} ဒေါင်းလုဒ်ရယူရန်",
+                    data=st.session_state[pdf_key], # ⭐ ဒီနေရာမှာ pdf_key ဖြစ်ရပါမယ်
                     file_name=filename,
                     mime="application/pdf",
                     use_container_width=True,
                     key=f"dl_{key}",
-                )
-            except Exception as e:
-                st.error(f"{key}: {e}")
-
+                )   
 # ============================================================
 # PREVIEW SUMMARY
 # ============================================================
@@ -512,5 +534,5 @@ else:
 # ============================================================
 
 st.divider()
-st.caption(f"👤 {'ဖောက်သည်' if st.session_state.get('language') == 'my' else 'Clients'}: {client['name']}")
+st.caption(f"👤 {'ဖောက်သည်' if st.session_state.get('language') == 'my' else 'Clients'}: {client_display_name}")
 st.caption(f"📅 {'ယနေ့' if st.session_state.get('language') == 'my' else 'Today'}: {format_date_mm(str(date.today()))}")

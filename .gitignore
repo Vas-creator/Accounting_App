@@ -30,3 +30,10 @@ assets/stamp.png
 config.yaml
 
 .streamlit/secrets.toml
+
+# Environment variables
+.env
+*.env
+
+# Secret files
+core/ai_help.py

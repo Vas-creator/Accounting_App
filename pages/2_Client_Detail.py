@@ -54,6 +54,9 @@ if not client:
         st.switch_page("pages/1_Clients.py")
     st.stop()
 
+# ⭐ Client Name မရှိရင် Business Name ကို ယူမယ်
+client_display_name = client.get("name") if client.get("name") else client.get("business_name", "Unknown")
+
 # ============================================================
 # SIDEBAR NAVIGATION
 # ============================================================
@@ -90,7 +93,7 @@ with st.sidebar:
         ">
             <p style="margin: 0; font-size: 0.85rem; color: #666;">{'လက်ရှိ ဖောက်သည်' if st.session_state.get('language', 'my') == 'my' else 'Current Client'}</p>
             <p style="margin: 0.2rem 0 0 0; font-weight: bold; color: #1565c0;">
-                👤 {client['name']}
+                👤 {client_display_name}
             </p>
         </div>
         """,
@@ -108,6 +111,7 @@ with col_back:
     if st.button("← " + ("ပြန်" if st.session_state.get("language", "my") == "my" else "Back"), use_container_width=True):
         st.switch_page("pages/1_Clients.py")
 
+# ⭐ Header မှာ Client Name (သို့) Business Name ပြမယ်
 st.markdown(
     f"""
     <div style="
@@ -118,10 +122,10 @@ st.markdown(
         margin-bottom: 1.5rem;
     ">
         <h1 style="margin: 0; font-size: 2rem;">
-            👤 {client['name']}
+            👤 {client_display_name}
         </h1>
         <p style="margin: 0.5rem 0 0 0; font-size: 1rem; opacity: 0.95;">
-            {f'🏢 {client.get("business_name")}' if client.get('business_name') else ''}
+            {f'🏢 {client.get("business_name")}' if client.get('business_name') and client.get('business_name') != client_display_name else ''}
         </p>
     </div>
     """,
@@ -280,7 +284,7 @@ for idx, stmt in enumerate(statements_config):
             type="primary" if not has_data else "secondary",
         ):
             st.session_state["selected_client_id"] = client_id
-            st.session_state["selected_client_name"] = client["name"]
+            st.session_state["selected_client_name"] = client_display_name
             st.switch_page(stmt["page"])
 
 st.markdown("<br>", unsafe_allow_html=True)
@@ -320,7 +324,7 @@ col1, col2 = st.columns(2)
 with col1:
     if st.button(f"📄 {t('export_pdf')}", use_container_width=True, type="primary"):
         st.session_state["selected_client_id"] = client_id
-        st.session_state["selected_client_name"] = client["name"]
+        st.session_state["selected_client_name"] = client_display_name
         st.switch_page("pages/7_Export.py")
 
 with col2:
@@ -347,7 +351,7 @@ if st.session_state.get("delete_from_detail"):
                 ⚠️ {'ဖျက်ရန် အတည်ပြုပါ' if st.session_state.get('language', 'my') == 'my' else 'Confirm Delete'}
             </h3>
             <p style="color: #c62828; margin: 0.5rem 0 0 0; font-size: 1rem;">
-                '<b>{client['name']}</b>' {'နဲ့ ရှင်းတမ်းအားလုံးကို ဖျက်ပါမည်လား?' if st.session_state.get('language', 'my') == 'my' else 'and all statements will be deleted. Are you sure?'}
+                '<b>{client_display_name}</b>' {'နဲ့ ရှင်းတမ်းအားလုံးကို ဖျက်ပါမည်လား?' if st.session_state.get('language', 'my') == 'my' else 'and all statements will be deleted. Are you sure?'}
             </p>
         </div>
         """,
@@ -362,7 +366,7 @@ if st.session_state.get("delete_from_detail"):
                 st.session_state.pop("selected_client_id", None)
                 st.session_state.pop("selected_client_name", None)
                 st.session_state["delete_from_detail"] = False
-                st.success(f"✓ '{client['name']}' {'ဖျက်ပြီးပါပြီ' if st.session_state.get('language', 'my') == 'my' else 'deleted successfully'}")
+                st.success(f"✓ '{client_display_name}' {'ဖျက်ပြီးပါပြီ' if st.session_state.get('language', 'my') == 'my' else 'deleted successfully'}")
                 st.switch_page("pages/1_Clients.py")
             except Exception as e:
                 st.error(f"❌ Error: {e}")
@@ -387,6 +391,7 @@ if client.get("notes"):
     )
     st.info(client["notes"])
 
+
 # ============================================================
 # META INFO
 # ============================================================
@@ -397,3 +402,55 @@ with col1:
     st.caption(f"📅 {t('created')}: {format_date_mm(client.get('created_at', ''))}")
 with col2:
     st.caption(f"🔄 {t('updated')}: {format_date_mm(client.get('updated_at', ''))}")
+
+# ============================================================
+# AI CHAT BOX (ဖိုင်ရဲ့ အောက်ဆုံးမှာ ထည့်ပါ)
+# ============================================================
+from core.ai_help import get_ai_response
+from core.utils import format_number
+import json
+
+st.divider()
+st.markdown("### 🤖 AI စာရင်းအကူအညီ (Ask AI)")
+
+# ⭐ Chat History ကို Session State မှာ သိမ်းမယ် (ဖောက်သည်တစ်ယောက်ချင်းစီအတွက်)
+chat_key = f"ai_chat_history_{client_id}"
+if chat_key not in st.session_state:
+    st.session_state[chat_key] = []
+
+# ဖောက်သည်ရဲ့ ဒေတာတွေကို စုစည်းမယ်
+client_context = f"ဖောက်သည်အမည်: {client_display_name}\nလုပ်ငန်းအမျိုးအစား: {client.get('business_type', '')}\n"
+
+try:
+    tpl_data = db.get_statement(client_id, "trading_pl")
+    if tpl_data and tpl_data.get("data"):
+        tpl_info = json.loads(tpl_data["data"])
+        client_context += f"""
+        နောက်ဆုံး အရောင်းအဝယ်စာရင်း:
+        - အရောင်း: {format_number(tpl_info.get('_total_revenue', 0))}
+        - ကုန်ကျစရိတ်: {format_number(tpl_info.get('_total_cos', 0))}
+        - အမြတ်: {format_number(tpl_info.get('_gross_profit', 0))}
+        - အသုံးစရိတ်: {format_number(tpl_info.get('_total_expenses', 0))}
+        - အသားတင်အမြတ်: {format_number(tpl_info.get('_net_profit', 0))}
+        """
+except Exception:
+    pass
+
+# Chat History ပြမယ်
+for message in st.session_state[chat_key]:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+# အသုံးပြုသူ ရိုက်ထည့်တဲ့ နေရာ
+if prompt := st.chat_input("ဒီဖောက်သည်ရဲ့ စာရင်းအခြေအနေကို မေးပါ..."):
+    # User ရဲ့ စာသားကို သိမ်းမယ်
+    st.session_state[chat_key].append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    # AI ဆီက အဖြေယူမယ်
+    with st.chat_message("assistant"):
+        with st.spinner("AI စဉ်းစားနေသည်..."):
+            response = get_ai_response(prompt, client_context)
+            st.markdown(response)
+    st.session_state[chat_key].append({"role": "assistant", "content": response})

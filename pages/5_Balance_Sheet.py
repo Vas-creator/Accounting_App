@@ -36,7 +36,6 @@ if not client_id:
     if st.button("← ဖောက်သည် စာရင်းသို့ ပြန်" if st.session_state.get("language", "my") == "my" else "← Back to Clients"):
         st.switch_page("pages/1_Clients.py")
     st.stop()
-
 try:
     client = db.get_client(client_id)
 except Exception as e:
@@ -46,6 +45,13 @@ except Exception as e:
 if not client:
     st.error("❌ ဖောက်သည် မတွေ့ပါ" if st.session_state.get("language", "my") == "my" else "❌ Client not found")
     st.stop()
+
+if not client:
+    st.error(f"❌ ဖောက်သည် မတွေ့ပါ" if st.session_state.get("language", "my") == "my" else "❌ Client not found")
+    st.stop()
+
+# ⭐ ဒီနေရာမှာ ထည့်ပါ (client ကို ရပြီးမှ ဒါကို သတ်မှတ်မယ်)
+client_display_name = client.get("name") if client.get("name") else client.get("business_name", "Unknown")
 
 # ============================================================
 # SESSION STATE (ဖောက်သည်ပြောင်းရင် ရှင်းမယ်)
@@ -105,7 +111,7 @@ with st.sidebar:
         <div style="background-color: #e3f2fd; padding: 0.8rem; border-radius: 8px; border-left: 4px solid #1565c0;">
             <p style="margin: 0; font-size: 0.85rem; color: #666;">{'ဖောက်သည်' if st.session_state.get('language', 'my') == 'my' else 'Client'}</p>
             <p style="margin: 0.2rem 0 0 0; font-weight: bold; color: #1565c0;">
-                👤 {client['name']}
+                👤 {client_display_name}
             </p>
         </div>
         """,
@@ -121,7 +127,7 @@ st.markdown(
     <div style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); padding: 1.2rem 1.5rem; border-radius: 12px; color: white; margin-bottom: 1.5rem;">
         <h1 style="margin: 0; font-size: 1.8rem;">📊 {t('pdf_balance')}</h1>
         <p style="margin: 0.5rem 0 0 0; font-size: 0.95rem; opacity: 0.95;">
-            Balance Sheet — {client['name']}
+            Balance Sheet — {client_display_name}
         </p>
     </div>
     """,
@@ -242,7 +248,7 @@ def num_input(label: str, key: str, is_deduction: bool = False, default: float =
         col_show, col_input = st.columns([0.5, 9.5])
         with col_show:
             default_show = st.session_state.get(state_key, {}).get(key, True)
-            show = st.checkbox("", value=default_show, key=f"show_bs_{key}", label_visibility="collapsed")
+            show = st.checkbox("", value=default_show, key=f"show_bs_{key}")
             st.session_state[state_key][key] = show
         
         with col_input:
@@ -455,6 +461,7 @@ with col1:
 
 with col2:
     if st.button("📄 PDF", use_container_width=True):
+        play_click_sound()
         try:
             # ⭐ Checkbox အနေအထားတွေ ထည့်မယ်
             pdf_data = dict(st.session_state.bs_data)
@@ -462,19 +469,22 @@ with col2:
             pdf_data["_show_bs_equity"] = st.session_state.show_bs_equity
             pdf_data["_show_bs_liab"] = st.session_state.show_bs_liab
 
+            # မင်းရဲ့ 5_Balance_Sheet.py ထဲက PDF ခလုတ်နေရာမှာ
+
             pdf_bytes = generate_pdf(
                 statement_type="balance_sheet",
-                client_name=client["name"],
-                data=pdf_data,
-                as_at_date=st.session_state.bs_date,
-                lang=st.session_state.language,
+                client_name=client_display_name,
+                client_id=client_id, 
+                business_name=client.get("business_name", ""),       
                 business_type=client.get("business_type", ""),
+                data=pdf_data,
+                as_at_date=st.session_state.bs_date, # ⭐ bs_period အစား bs_date ဖြစ်ရပါမယ်
+                lang=st.session_state.language,
             )
-            
             st.download_button(
                 "⬇️ PDF Download",
                 data=pdf_bytes,
-                file_name=f"{client['name']}_BalanceSheet_{st.session_state.bs_date}.pdf",
+                file_name=f"{client['name']}_BalanceSheet.pdf",
                 mime="application/pdf",
                 use_container_width=True,
             )

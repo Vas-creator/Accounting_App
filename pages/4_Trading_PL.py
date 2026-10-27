@@ -236,7 +236,7 @@ def num_input(label: str, key: str, is_deduction: bool = False, state_key: str =
     col_show, col_input = st.columns([0.5, 9.5])
     with col_show:
         default_show = st.session_state.get(state_key, {}).get(key, True)
-        show = st.checkbox("", value=default_show, key=f"show_{key}", label_visibility="collapsed")
+        show = st.checkbox(" ", value=default_show, key=f"show_{key}")
         st.session_state[state_key][key] = show
     
     with col_input:
@@ -503,7 +503,7 @@ with col1:
 
 with col2:
     if st.button("📄 PDF", use_container_width=True):
-        play_click_sound()  # ⭐ ဒါလေး ထည့်ပါ
+        play_click_sound()
         try:
             pdf_data = dict(st.session_state.tpl_data)
             pdf_data["custom_data"] = st.session_state.custom_data
@@ -514,7 +514,7 @@ with col2:
             pdf_data["_show_expenses"] = st.session_state.show_expenses
             pdf_data["_show_other_income"] = st.session_state.show_other_income
             
-            # ⭐ Manufacturing Cost အကွက် ၃ ခုကို ထည့်မယ်
+            # Manufacturing Cost အကွက် ၃ ခုကို ထည့်မယ်
             pdf_data["mfg_direct_material"] = st.session_state.tpl_data.get("mfg_direct_material", 0)
             pdf_data["mfg_direct_labour"] = st.session_state.tpl_data.get("mfg_direct_labour", 0)
             pdf_data["mfg_direct_overhead"] = st.session_state.tpl_data.get("mfg_direct_overhead", 0)
@@ -535,10 +535,12 @@ with col2:
             pdf_bytes = generate_pdf(
                 statement_type="trading_pl",
                 client_name=client["name"],
+                client_id=st.session_state.get("selected_client_id"), # ⭐ ဒါလေး ထည့်ပါ
+                business_name=client.get("business_name", ""),       # ⭐ ဒါလေး ထည့်ပါ
+                business_type=client.get("business_type", ""),
                 data=pdf_data,
                 period_end=st.session_state.tpl_period,
                 lang=st.session_state.language,
-                business_type=client.get("business_type", ""),  # ⭐ ဒါလေး ထည့်မယ်
             )
 
             st.download_button(
@@ -550,7 +552,7 @@ with col2:
             )
         except Exception as e:
             st.error(f"❌ PDF Error: {e}")
-
+            
 with col3:
     if st.button("🔄 Reset", use_container_width=True):
         play_click_sound()  # ⭐ ဒါလေး ထည့်ပါ

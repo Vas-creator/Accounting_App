@@ -3,6 +3,7 @@ import os
 import json
 from datetime import date, datetime
 from typing import Dict, Any, List, Optional
+from core import db
 
 from weasyprint import HTML, CSS
 
@@ -115,21 +116,30 @@ PDF_TRANSLATIONS = {
         "balanced_msg": "✓ ဟန်ချက်ညီပါသည် (Assets = Liabilities + Capital)",
         "not_balanced_msg": "✗ ကွာဟမှု: {} ကျပ်",
 
+                # ... အပေါ်က ကုဒ်တွေ ...
         "cf_op_title": "က။ လုပ်ငန်း လည်ပတ်မှု လုပ်ဆောင်ချက်များမှ ငွေသား",
         "cf_net_profit": "အခွန်မဆိုင်မီ အသားတင် အမြတ်/အရှုံး",
+        "cf_retain_earning": "စုဆောင်းအမြတ် တိုးလာမှု",
+        "cf_amortization": "တန်ဖိုးလျော့ခြင်း (Amortization)",
         "cf_depreciation": "တန်ဖိုးကျဆင်းမှု (Depreciation)",
         "cf_op_profit": "လုပ်ငန်းလည်ပတ်မှု အမြတ် (Working Capital မဆိုင်မီ)",
+        
+        "cf_wc_title": "ခ။ လုပ်ငန်း လည်ပတ်မှု အရင်းအနှီး ပြောင်းလဲမှုများ",
         "cf_inv_change": "ကုန်ပစ္စည်းလက်ကျန် တိုး/ကျ",
         "cf_rec_change": "ရရန်ကျန်ငွေ တိုး/ကျ",
         "cf_pay_change": "ပေးရန်ကျန်ငွေ တိုး/ကျ",
+        "cf_prep_change": "ကြိုတင်ပေးငွေ တိုး/ကျ",
+        "cf_cash_from_op": "လုပ်ငန်းလည်ပတ်မှုမှ ရရှိသော ငွေသား",
         "cf_net_op": "လုပ်ငန်းလည်ပတ်မှုမှ ရရှိသော ငွေသား (Net)",
-        "cf_inv_title": "ခ။ ရင်းနှီးမြှုပ်နှံမှု လုပ်ဆောင်ချက်များမှ ငွေသား",
+        
+        "cf_inv_title": "ဂ။ ရင်းနှီးမြှုပ်နှံမှု လုပ်ဆောင်ချက်များမှ ငွေသား",
         "cf_invest_fa": "ပုံသေပိုင်ဆိုင်မှု ဝယ်ယူမှု",
         "cf_net_investing": "ရင်းနှီးမြှုပ်နှံမှုမှ ထွက်သွားသော ငွေသား (Net)",
-        "cf_fin_title": "ဂ။ ငွေကြေးရှာဖွေမှု လုပ်ဆောင်ချက်များမှ ငွေသား",
-        "cf_fin_loan": "ချေးငွေ တိုးလာမှု",
+        
+        "cf_fin_title": "ဃ။ ငွေကြေးရှာဖွေမှု လုပ်ဆောင်ချက်များမှ ငွေသား",
         "cf_fin_draw": "ပိုင်ရှင် ထုတ်ယူမှု (Drawing)",
         "cf_net_financing": "ငွေကြေးရှာဖွေမှုမှ ထွက်သွားသော ငွေသား (Net)",
+        
         "cf_summary_title": "ငွေသား အကျဉ်းချုပ်",
         "cf_net_change": "ငွေသား ပြောင်းလဲမှု (Net Change)",
         "cf_opening_cash": "ကာလအစ ငွေသား",
@@ -233,19 +243,28 @@ PDF_TRANSLATIONS = {
 
         "cf_op_title": "A. CASH FLOW FROM OPERATION ACTIVITIES",
         "cf_net_profit": "Net Profit before Taxation",
+        "cf_retain_earning": "Increase in Retain Earning",
+        "cf_amortization": "Amortization",
         "cf_depreciation": "Depreciation",
         "cf_op_profit": "Operation Profit before Working Capital",
+        
+        "cf_wc_title": "B. WORKING CAPITAL CHANGES",
         "cf_inv_change": "Changes in Inventories",
         "cf_rec_change": "Changes in A/C Receivable",
         "cf_pay_change": "Changes in Creditors",
+        "cf_prep_change": "Changes in Prepayment",
+        "cf_cash_from_op": "Cash used in / generated from operation",
         "cf_net_op": "Net cash inflow from Operation",
-        "cf_inv_title": "B. CASH FLOW FROM INVESTING ACTIVITIES",
+        
+        "cf_inv_title": "C. CASH FLOW FROM INVESTING ACTIVITIES",
         "cf_invest_fa": "Purchase of Fixed Assets",
         "cf_net_investing": "Net Cash from Investing",
-        "cf_fin_title": "C. CASH FLOW FROM FINANCING ACTIVITIES",
+        
+        "cf_fin_title": "D. CASH FLOW FROM FINANCING ACTIVITIES",
         "cf_fin_loan": "Increase in Loan",
         "cf_fin_draw": "Drawing",
         "cf_net_financing": "Net Cash from Financing",
+        
         "cf_summary_title": "CASH SUMMARY",
         "cf_net_change": "Net Change in Cash",
         "cf_opening_cash": "Cash at Beginning",
@@ -463,17 +482,34 @@ def calculate_balance_sheet(data: Dict[str, Any]) -> Dict[str, Any]:
 # 2. HTML RENDER HELPERS
 # ============================================================
 
-def _build_html_header(client_name: str, title: str, period_str: str, business_type: str = "") -> str:
-    business_type_html = f'<p class="business-type">{business_type}</p>' if business_type else ""
+def _build_html_header(client_name: str, title: str, period_str: str, business_name: str = "", business_type: str = "") -> str:
+    # ၁။ ဖောက်သည်နာမည် (Client Name နဲ့ Business Name မတူမှ ပြမယ်)
+    if client_name and client_name != business_name:
+        name_html = f'<h1 style="color: #1f4788; margin: 0 0 10px 0; font-size: 18pt;">{client_name}</h1>'
+    else:
+        name_html = ""
+    
+    # ၂။ လုပ်ငန်းနာမည် + အမျိုးအစား
+    business_info = ""
+    if business_name and business_type:
+        business_info = f"{business_name} ({business_type})"
+    elif business_name:
+        business_info = business_name
+    elif business_type:
+        business_info = f"({business_type})"
+        
+    b_info_html = f'<h2 style="color: #333; margin: 0 0 10px 0; font-size: 14pt;">{business_info}</h2>' if business_info else ""
+    
+    # ၃။ စာရင်းခေါင်းစဉ် + ကာလ (တစ်ကြောင်းတည်း ပေါင်းထားတယ်)
+    title_period_html = f'<h3 style="font-size: 13pt; margin: 0; font-weight: bold; color: #1565c0;">{title} <span style="color: #666; font-weight: normal; font-size: 11pt;">- {period_str}</span></h3>'
+    
     return f"""
-    <div class="header">
-        <h1>{client_name}</h1>
-        <h2>{title}</h2>
-        <p class="period">{period_str}</p>
-        {business_type_html}
+    <div class="header" style="text-align: center; margin-bottom: 20px;">
+        {name_html}
+        {b_info_html}
+        {title_period_html}
     </div>
     """
-
 
 def _build_html_row(sr: str, label: str, value: float, is_subtotal=False, is_total=False,
                     is_deduction=False, is_bold=False):
@@ -840,15 +876,15 @@ def _render_cash_flow_html(data: Dict[str, Any], lang: str) -> str:
     dep = parse_number(data.get("depreciation", 0))
     
     html += _build_html_row(get_sr(), get_pdf_text(lang, "cf_net_profit"), net_profit)
-    html += _build_html_row(get_sr(), "Increase in Retain Earning", retain_change)
-    html += _build_html_row(get_sr(), "Amortization", amortization)
+    html += _build_html_row(get_sr(), get_pdf_text(lang, "cf_retain_earning"), retain_change)
+    html += _build_html_row(get_sr(), get_pdf_text(lang, "cf_amortization"), amortization)
     html += _build_html_row(get_sr(), get_pdf_text(lang, "cf_depreciation"), dep)
 
     op_profit = net_profit + retain_change + amortization + dep
     html += _build_html_row("", get_pdf_text(lang, "cf_op_profit"), op_profit, is_subtotal=True)
 
     # --- B. WORKING CAPITAL CHANGES ---
-    html += f'<tr class="section-header"><td colspan="3">B. WORKING CAPITAL CHANGES</td></tr>'
+    html += f'<tr class="section-header"><td colspan="3">{get_pdf_text(lang, "cf_wc_title")}</td></tr>'
     
     inv_chg = parse_number(data.get("change_inventories", 0))
     rec_chg = parse_number(data.get("change_receivable", 0))
@@ -856,38 +892,37 @@ def _render_cash_flow_html(data: Dict[str, Any], lang: str) -> str:
     prep_chg = parse_number(data.get("change_prepayment", 0))
     
     if inv_chg != 0:
-        html += _build_html_row(get_sr(), "Increase/Decrease in Inventories", inv_chg, is_deduction=(inv_chg < 0))
+        html += _build_html_row(get_sr(), get_pdf_text(lang, "cf_inv_change"), inv_chg, is_deduction=(inv_chg < 0))
     if rec_chg != 0:
-        html += _build_html_row(get_sr(), "Increase/Decrease in A/C Receivable", rec_chg, is_deduction=(rec_chg < 0))
+        html += _build_html_row(get_sr(), get_pdf_text(lang, "cf_rec_change"), rec_chg, is_deduction=(rec_chg < 0))
     if pay_chg != 0:
-        html += _build_html_row(get_sr(), "Increase/Decrease in Creditors/A/P", pay_chg, is_deduction=(pay_chg < 0))
-    if prep_chg != 0:  # ⭐ ဒါလေး ထပ်ထည့်
-        html += _build_html_row(get_sr(), "Increase/Decrease in Prepayment", prep_chg, is_deduction=(prep_chg < 0))
+        html += _build_html_row(get_sr(), get_pdf_text(lang, "cf_pay_change"), pay_chg, is_deduction=(pay_chg < 0))
+    if prep_chg != 0:
+        html += _build_html_row(get_sr(), get_pdf_text(lang, "cf_prep_change"), prep_chg, is_deduction=(prep_chg < 0))
 
     total_wc_change = inv_chg + rec_chg + pay_chg + prep_chg
-    html += _build_html_row("", "Cash used in / generated from operation", total_wc_change, is_subtotal=True, is_deduction=(total_wc_change < 0))
+    html += _build_html_row("", get_pdf_text(lang, "cf_cash_from_op"), total_wc_change, is_subtotal=True, is_deduction=(total_wc_change < 0))
     
-    # Net Cash from Operation (A + B)
     net_op = op_profit + total_wc_change
     html += _build_html_row("", get_pdf_text(lang, "cf_net_op"), net_op, is_total=True, is_deduction=(net_op < 0))
 
     # --- C. INVESTING ACTIVITIES ---
-    html += f'<tr class="section-header"><td colspan="3">C. CASH FLOW FROM INVESTING ACTIVITIES</td></tr>'
+    html += f'<tr class="section-header"><td colspan="3">{get_pdf_text(lang, "cf_inv_title")}</td></tr>'
     invest_fa = parse_number(data.get("investing_purchase_fa", 0))
     if invest_fa != 0:
-        html += _build_html_row(get_sr(), "Purchase of Fixed Assets", invest_fa, is_deduction=(invest_fa < 0))
+        html += _build_html_row(get_sr(), get_pdf_text(lang, "cf_invest_fa"), invest_fa, is_deduction=(invest_fa < 0))
     
     net_investing = invest_fa
-    html += _build_html_row("", "Net Cash from Investing", net_investing, is_total=True, is_deduction=(net_investing < 0))
+    html += _build_html_row("", get_pdf_text(lang, "cf_net_investing"), net_investing, is_total=True, is_deduction=(net_investing < 0))
 
     # --- D. FINANCING ACTIVITIES ---
-    html += f'<tr class="section-header"><td colspan="3">D. CASH FLOW FROM FINANCING ACTIVITIES</td></tr>'
+    html += f'<tr class="section-header"><td colspan="3">{get_pdf_text(lang, "cf_fin_title")}</td></tr>'
     fin_draw = parse_number(data.get("financing_drawing", 0))
     if fin_draw != 0:
-        html += _build_html_row(get_sr(), "Drawing", fin_draw, is_deduction=(fin_draw < 0))
+        html += _build_html_row(get_sr(), get_pdf_text(lang, "cf_fin_draw"), fin_draw, is_deduction=(fin_draw < 0))
     
     net_financing = fin_draw
-    html += _build_html_row("", "Net Cash from Financing", net_financing, is_total=True, is_deduction=(net_financing < 0))
+    html += _build_html_row("", get_pdf_text(lang, "cf_net_financing"), net_financing, is_total=True, is_deduction=(net_financing < 0))
 
     # --- CASH SUMMARY ---
     html += f'<tr class="section-header"><td colspan="3">{get_pdf_text(lang, "cf_summary_title")}</td></tr>'
@@ -914,8 +949,25 @@ def generate_pdf(
     as_at_date: str = "",
     output_path: Optional[str] = None,
     lang: str = "my",
-    business_type: str = "",  # ⭐ ဒါလေး ထပ်ထည့်မယ်
+    business_type: str = "", 
+    business_name: str = "", 
+    client_id: int = None,
 ) -> bytes:
+
+    # ⭐⭐⭐ အရေးကြီးဆုံး အပိုင်း ⭐⭐⭐
+    # client_id ပါလာရင် Database ကနေ လုပ်ငန်းနာမည်ကို အတင်း ဆွဲထုတ်မယ်
+    if client_id:
+        try:
+            client_db = db.get_client(client_id)
+            if client_db:
+                business_name = client_db.get("business_name", "")
+                if not client_name:
+                    client_name = client_db.get("name", "")
+                if not business_type:
+                    business_type = client_db.get("business_type", "")
+        except Exception:
+            pass
+    # =================================
 
     titles = {
         "manufacturing": get_pdf_text(lang, "manufacturing_title"),
@@ -930,7 +982,6 @@ def generate_pdf(
     if statement_type == "manufacturing":
         data["period_end"] = period_end
         t_res = calculate_manufacturing(data)
-        # ⭐ "For the year ended" ပြောင်းမယ်
         if lang == "en":
             period_str = f"For the year ended {format_date_ordinal(period_end)}"
         else:
@@ -951,7 +1002,6 @@ def generate_pdf(
             t_res["profit_loss"]["expenses"]["expenses_total"] = data["_total_expenses"]
         if data.get("_net_profit") is not None:
             t_res["profit_loss"]["net_profit"]["value"] = data["_net_profit"]
-        # ⭐ "For the year ended" ပြောင်းမယ်
         if lang == "en":
             period_str = f"For the year ended {format_date_ordinal(period_end)}"
         else:
@@ -962,18 +1012,16 @@ def generate_pdf(
         data["as_at_date"] = as_at_date
         t_res = calculate_balance_sheet(data)
         period_str = f"As at {format_date_ordinal(as_at_date)}" if lang == "en" else f"ရက်စွဲ: {format_date_ordinal(as_at_date)}"
-        table_html = _render_balance_sheet_html(t_res, lang, data)  # ⭐ data ကိုပါ ပို့ပါ
+        table_html = _render_balance_sheet_html(t_res, lang, data) 
 
     elif statement_type == "cash_flow":
         data["period_end"] = period_end
-        # ⭐ "For the year ended" ပြောင်းမယ်
         if lang == "en":
             period_str = f"For the year ended {format_date_ordinal(period_end)}"
         else:
             period_str = f"ကာလကုန်: {format_date_ordinal(period_end)}"
         table_html = _render_cash_flow_html(data, lang)
     
-    # ⭐ Trading PL အတွက် Column 5 ခု၊ ကျန်တာအတွက် Column 3 ခု သတ်မှတ်မယ်
     col_count = 5 if statement_type == "trading_pl" else 3
     th_amounts = ""
     if col_count == 5:
@@ -985,6 +1033,8 @@ def generate_pdf(
     else:
         th_amounts = '<th class="amount" style="width: 20%;">Amount (MMK)</th>'
 
+    # ⭐ Header ကို ဒီနေရာမှာ သေချာခေါ်ပါတယ်
+    header_html = _build_html_header(client_name, titles[statement_type], period_str, business_name, business_type)
     full_html = f"""
     <!DOCTYPE html>
     <html>
@@ -1049,7 +1099,6 @@ def generate_pdf(
                 font-weight: bold; color: #333; padding-top: 6px; padding-bottom: 6px;
             }}
 
-            /* ⭐ COGS အတွက် ခဲရောင် စတိုင်အသစ် */
             .cogs-row td {{
                 background-color: #f5f5f5; 
                 color: #333; 
@@ -1071,7 +1120,7 @@ def generate_pdf(
         </style>
     </head>
     <body>
-        {_build_html_header(client_name, titles[statement_type], period_str, business_type)}
+        {header_html}
         <hr>
         <table>
             <thead>
