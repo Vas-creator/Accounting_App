@@ -377,15 +377,36 @@ def calculate_trading_pl(data: Dict[str, Any]) -> Dict[str, Any]:
 
     cogs = t["trading"]["cogs"]["items"]
     
-    closing_stock = parse_number(cogs["less_closing_stock"]["value"])
+    # ⭐ Opening Stock - Custom ပေါင်းခြင်းကိုပဲ ယူမယ်
+    opening_custom_total = 0
+    for item in custom_data.get("opening_stock", []):
+        if item.get("value"):
+            opening_custom_total += parse_number(item["value"])
+    t["trading"]["cogs"]["items"]["opening_stock_finished"]["value"] = opening_custom_total
+
+    # ⭐ Purchases - Custom ပေါင်းခြင်းကိုပဲ ယူမယ် (မူရင်းကို လုံးဝမယူဘူး)
+    purchases_custom_total = 0
+    for item in custom_data.get("purchases", []):
+        if item.get("value"):
+            purchases_custom_total += parse_number(item["value"])
+    t["trading"]["cogs"]["items"]["add_purchases"]["value"] = purchases_custom_total
+
+    # ⭐ Closing Stock - Custom ပေါင်းခြင်းကိုပဲ ယူမယ်
+    closing_custom_total = 0
+    for item in custom_data.get("closing_stock", []):
+        if item.get("value"):
+            closing_custom_total += parse_number(item["value"])
+    t["trading"]["cogs"]["items"]["less_closing_stock"]["value"] = closing_custom_total
+
+    closing_stock = closing_custom_total
     if data.get("closing_stock") is not None:
         closing_stock = parse_number(data["closing_stock"])
     elif data.get("closing_stock_finished") is not None:
         closing_stock = parse_number(data["closing_stock_finished"])
         
     cogs_total = (
-        parse_number(cogs["opening_stock_finished"]["value"])
-        + parse_number(cogs["add_purchases"]["value"])
+        t["trading"]["cogs"]["items"]["opening_stock_finished"]["value"]
+        + t["trading"]["cogs"]["items"]["add_purchases"]["value"]
         + parse_number(cogs["add_manufacturing_cost"]["value"])
         + parse_number(cogs["add_carriage_inward"]["value"])
         + parse_number(cogs["add_duty"]["value"])
@@ -431,7 +452,6 @@ def calculate_trading_pl(data: Dict[str, Any]) -> Dict[str, Any]:
     t["profit_loss"]["net_profit"]["value"] = net_profit
 
     return t
-
 
 def calculate_balance_sheet(data: Dict[str, Any]) -> Dict[str, Any]:
     t = merge_template_with_data("balance_sheet", data)
@@ -631,6 +651,8 @@ def _render_manufacturing_html(t: Dict[str, Any], lang: str) -> str:
 def _render_trading_pl_html(t: Dict[str, Any], lang: str, data: Dict[str, Any]) -> str:
     html = ""
     sr_counter = 1
+    custom_data = t.get("custom_data", {})
+    cost_custom = data.get("custom_data", {}) 
 
     def get_sr():
         nonlocal sr_counter
@@ -638,8 +660,8 @@ def _render_trading_pl_html(t: Dict[str, Any], lang: str, data: Dict[str, Any]) 
         sr_counter += 1
         return s
 
-    def _build_row_5(sr, label, amt1="", amt2="", amt3="", css="", is_bold=False):
-        label_style = "font-weight: bold;" if is_bold else ""
+    def _build_row_5(sr, label, amt1="", amt2="", amt3="", css="", is_bold=False, indent=0):
+        label_style = f"font-weight: bold; padding-left: {indent * 20}px;" if is_bold else f"padding-left: {indent * 20}px;"
         return f"""
         <tr class="{css}">
             <td class="sr">{sr}</td>
@@ -654,7 +676,6 @@ def _render_trading_pl_html(t: Dict[str, Any], lang: str, data: Dict[str, Any]) 
     show_cos = data.get("_show_cos", {})
     show_expenses = data.get("_show_expenses", {})
     show_other_income = data.get("_show_other_income", {})
-    custom_data = t.get("custom_data", {})
     
     # --- 1. Revenue ---
     html += f'<tr class="section-header"><td colspan="5">{get_pdf_text(lang, "trading_acc_title")}</td></tr>'
@@ -662,8 +683,7 @@ def _render_trading_pl_html(t: Dict[str, Any], lang: str, data: Dict[str, Any]) 
     
     if show_revenue.get("cash_sales", True):
         html += _build_row_5(get_sr(), get_pdf_text(lang, "cash_sales"), "", format_number(sales["cash_sales"]["value"]), "")
-    # if show_revenue.get("credit_sales", True):
-        # html += _build_row_5(get_sr(), get_pdf_text(lang, "credit_sales"), "", format_number(sales["credit_sales"]["value"]), "")
+    
     if show_revenue.get("sales_return", True):
         html += _build_row_5(get_sr(), get_pdf_text(lang, "less_sales_return"), "", f"({format_number(sales['less_sales_return']['value'])})", "")
 
@@ -671,7 +691,6 @@ def _render_trading_pl_html(t: Dict[str, Any], lang: str, data: Dict[str, Any]) 
         if item.get("label") and item.get("value", 0) > 0:
             html += _build_row_5(get_sr(), item["label"], "", format_number(item["value"]), "")
 
-    # ⭐ အခြားဝင်ငွေများကို ဒီနေရာမှာ ထည့်မယ် (Amount 2 မှာ)
     html += f'<tr class="section-header"><td colspan="5">{get_pdf_text(lang, "other_income")}</td></tr>'
     oi = t["profit_loss"]["other_income"]["items"]
     for k, item in oi.items(): 
@@ -681,7 +700,6 @@ def _render_trading_pl_html(t: Dict[str, Any], lang: str, data: Dict[str, Any]) 
                 html += _build_row_5(get_sr(), item["label_mm"] if lang=="my" else item["label_en"], "", format_number(val), "")
     html += _build_row_5("", get_pdf_text(lang, "other_income_total"), "", format_number(t["profit_loss"]["other_income"]["other_income_total"]), "", css="subtotal-row", is_bold=True)
 
-    # ⭐ Net Sales (Revenue) ကို Amount 3 မှာ ပြမယ်
     revenue_label = "အရောင်း စုစုပေါင်း (Revenue)" if lang == "my" else "Total Revenue"
     html += _build_row_5("", revenue_label, "", "", format_number(t["trading"]["sales"]["net_sales"]), css="subtotal-row", is_bold=True)
 
@@ -702,12 +720,25 @@ def _render_trading_pl_html(t: Dict[str, Any], lang: str, data: Dict[str, Any]) 
         
     prod_cost = mfg_dm + mfg_dl + mfg_oh
 
+    # ⭐ Opening Stock
     if show_cos.get("opening_stock_finished", True):
+        for item in cost_custom.get("opening_stock", []):
+            if item.get("label") and item.get("value", 0) > 0:
+                cost_of_prod_rows += _build_row_5(get_sr(), item["label"], format_number(item["value"]), "", "", indent=1)
         cost_of_prod_rows += _build_row_5(get_sr(), get_pdf_text(lang, "opening_stock_finished"), "", format_number(cogs["opening_stock_finished"]["value"]), "")
+
+    # ⭐ Purchases
     if show_cos.get("purchases", True):
-        cost_of_prod_rows += _build_row_5(get_sr(), get_pdf_text(lang, "add_purchases"), "", format_number(cogs["add_purchases"]["value"]), "")
+        for item in cost_custom.get("purchases", []):
+            if item.get("label") and item.get("value", 0) > 0:
+                cost_of_prod_rows += _build_row_5(get_sr(), item["label"], format_number(item["value"]), "", "", indent=1)
+        
+        purchases_total = sum(item.get("value", 0) for item in cost_custom.get("purchases", []))
+        cost_of_prod_rows += _build_row_5(get_sr(), get_pdf_text(lang, "add_purchases"), "", format_number(purchases_total), "")
+
     if show_cos.get("carriage_inward", True):
         cost_of_prod_rows += _build_row_5(get_sr(), get_pdf_text(lang, "add_carriage_inward"), "", format_number(cogs["add_carriage_inward"]["value"]), "")
+    
     if show_cos.get("purchase_return", True):
         cost_of_prod_rows += _build_row_5(get_sr(), get_pdf_text(lang, "less_purchase_return"), "", f"({format_number(cogs['less_purchase_return']['value'])})", "")
 
@@ -715,16 +746,21 @@ def _render_trading_pl_html(t: Dict[str, Any], lang: str, data: Dict[str, Any]) 
         if item.get("label") and item.get("value", 0) > 0:
             cost_of_prod_rows += _build_row_5(get_sr(), item["label"], "", format_number(item["value"]), "")
 
-    total_cogs_before_closing = prod_cost + cogs["opening_stock_finished"]["value"] + cogs["add_purchases"]["value"] + cogs["add_carriage_inward"]["value"] - cogs["less_purchase_return"]["value"]
+    total_cogs_before_closing = prod_cost + cogs["opening_stock_finished"]["value"] + purchases_total + cogs["add_carriage_inward"]["value"] - cogs["less_purchase_return"]["value"]
     for item in custom_data.get("cos", []):
         total_cogs_before_closing += item.get("value", 0)
 
     html += cost_of_prod_rows
 
+    # ⭐ Closing Stock (ဒီနေရာမှာ cost_of_prod_rows မသုံးဘဲ တိုက်ရိုက် html ထဲကို ထည့်မယ်)
     if show_cos.get("closing_stock_finished", True):
-        html += _build_row_5(get_sr(), get_pdf_text(lang, "less_closing_stock"), "", f"({format_number(cogs['less_closing_stock']['value'])})", "")
+        for item in cost_custom.get("closing_stock", []):
+            if item.get("label") and item.get("value", 0) > 0:
+                html += _build_row_5(get_sr(), item["label"], f"({format_number(item['value'])})", "", "", indent=1)
+        
+        closing_stock_total = sum(item.get("value", 0) for item in cost_custom.get("closing_stock", []))
+        html += _build_row_5(get_sr(), get_pdf_text(lang, "less_closing_stock"), "", f"({format_number(closing_stock_total)})", "")
 
-    # ⭐ COGS ကို Amount 3 မှာ ပြမယ် (စာသားပြောင်းထားတယ်)
     cogs_label = "ကုန်ရောင်း တန်ဖိုး (Cost of Sales)" if lang == "my" else "Cost of Sales"
     html += _build_row_5("", cogs_label, "", "", format_number(t["trading"]["cogs"]["cogs_total"]), css="cogs-row", is_bold=True)
 
@@ -734,10 +770,8 @@ def _render_trading_pl_html(t: Dict[str, Any], lang: str, data: Dict[str, Any]) 
 
     # --- 3. P&L Account ---
     html += f'<tr class="section-header"><td colspan="5">{get_pdf_text(lang, "pl_acc_title")}</td></tr>'
-
     html += f'<tr class="section-header"><td colspan="5">{get_pdf_text(lang, "expenses")}</td></tr>'
     
-    # ⭐ ဘာသာစကားအလိုက် စာသားတွေ ပြောင်းမယ်
     if lang == "my":
         default_expenses_map = {
             "staff_salary": "ဝန်ထမ်းခနှင့် အလုပ်သမားခ",
@@ -763,15 +797,12 @@ def _render_trading_pl_html(t: Dict[str, Any], lang: str, data: Dict[str, Any]) 
         if show_expenses.get(key, True):
             val = parse_number(data.get(key, 0))
             if val > 0:
-                # ⭐ ဒီနေရာမှာ Amount 2 ကော်လံထဲ ထည့်မယ်
                 html += _build_row_5(get_sr(), label, "", format_number(val), "")
     
     for item in custom_data.get("expenses", []):
         if item.get("label") and item.get("value", 0) > 0:
-            # ⭐ ဒီနေရာမှာလည်း Amount 2 ကော်လံထဲ ထည့်မယ်
             html += _build_row_5(get_sr(), item["label"], "", format_number(item["value"]), "")
     
-    # ⭐ စုစုပေါင်း အသုံးစရိတ်ကို Amount 3 မှာ ထည့်မယ်
     html += _build_row_5("", get_pdf_text(lang, "expenses_total"), "", "", format_number(t["profit_loss"]["expenses"]["expenses_total"]), css="subtotal-row", is_bold=True)
 
     np_ = t["profit_loss"]["net_profit"]

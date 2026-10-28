@@ -9,8 +9,7 @@ from core.utils import (
 )
 from core.pdf_generator import generate_pdf
 from core.translations import t
-from core.utils import play_click_sound  # ⭐ ဒါလေး ထပ်ထည့်ပါ
-
+from core.utils import play_click_sound
 
 st.set_page_config(
     page_title="Trading & P&L",
@@ -194,6 +193,14 @@ if "custom_data" not in st.session_state:
     else:
         st.session_state.custom_data = {"revenue": [], "cos": [], "expenses": []}
 
+# ⭐ Custom Cost of Sales Items အတွက် Session State အသစ်
+if "tpl_cost_custom" not in st.session_state:
+    st.session_state.tpl_cost_custom = {
+        "opening_stock": [],
+        "purchases": [],
+        "closing_stock": []
+    }
+
 # Show/Hide State
 if "show_revenue" not in st.session_state:
     st.session_state.show_revenue = {"cash_sales": True, "credit_sales": True, "sales_return": True}
@@ -292,6 +299,35 @@ def render_custom_items(section_key: str, title: str):
     
     return total
 
+# ⭐ Cost of Sales အတွက် Custom Item ထည့်တဲ့ Function
+def render_cost_custom_items(section_key: str, title: str):
+    st.markdown(f"**➕ {title}**")
+    items = st.session_state.tpl_cost_custom.get(section_key, [])
+    
+    for i, item in enumerate(items):
+        col_x, col_y, col_z = st.columns([2, 2, 1])
+        with col_x:
+            item["label"] = st.text_input("Name", value=item.get("label", ""), key=f"tpl_cost_{section_key}_label_{i}", label_visibility="collapsed")
+        with col_y:
+            item["value"] = st.number_input(
+                "Amount", value=int(item.get("value", 0)), 
+                step=1000, format="%d", key=f"tpl_cost_{section_key}_value_{i}", 
+                label_visibility="collapsed"
+            )
+        with col_z:
+            if st.button("🗑️", key=f"tpl_cost_{section_key}_del_{i}"):
+                items.pop(i)
+                st.session_state.tpl_cost_custom[section_key] = items
+                st.rerun()
+    
+    if st.button(f"➕ {'Item ထည့်' if st.session_state.get('language') == 'my' else 'Add Item'}", key=f"tpl_cost_add_{section_key}"):
+        items.append({"label": "", "value": 0})
+        st.session_state.tpl_cost_custom[section_key] = items
+        st.rerun()
+    
+    total = sum(item.get("value", 0) for item in items)
+    return total
+
 # ============================================================
 # 3 COLUMNS LAYOUT
 # ============================================================
@@ -351,15 +387,49 @@ with col1:
     mfg_cost_input = mfg_direct_material + mfg_direct_labour + mfg_direct_overhead
     st.session_state.tpl_data["manufacturing_cost"] = mfg_cost_input
 
-    cs_opening = num_input("အဖွင့် ကုန်ချောလက်ကျန်", "opening_stock_finished", state_key="show_cos")
-    cs_purchases = num_input("ကုန်ပစ္စည်း ဝယ်ယူမှု", "purchases", state_key="show_cos")
+    # ၁။ Opening Stock
+    cs_opening = st.number_input(
+        "အဖွင့် ကုန်ချောလက်ကျန် (Opening Stock)", 
+        value=int(st.session_state.tpl_data.get("opening_stock_finished", 0)),
+        min_value=0, step=1000, format="%d", key="cs_opening"
+    )
+    st.session_state.tpl_data["opening_stock_finished"] = cs_opening
+    
+    # ⭐ Opening Stock အောက်မှာ Custom Input
+    custom_opening_total = render_cost_custom_items("opening_stock", "Custom Opening Stock")
+    final_opening_stock = cs_opening + custom_opening_total
+
+    # ၂။ Purchases
+    cs_purchases = st.number_input(
+        "ကုန်ပစ္စည်းဝယ်ယူမှု (Purchases)", 
+        value=int(st.session_state.tpl_data.get("add_purchases", 0)),
+        min_value=0, step=1000, format="%d", key="cs_purchases"
+    )
+    st.session_state.tpl_data["add_purchases"] = cs_purchases
+    
+    # ⭐ Purchases အောက်မှာ Custom Input
+    custom_purchases_total = render_cost_custom_items("purchases", "Custom Purchases")
+    final_purchases = cs_purchases + custom_purchases_total
+    
     cs_carriage = num_input("သယ်ယူပို့ဆောင်ခ", "carriage_inward", state_key="show_cos")
     cs_return = num_input("ဝယ်ယူမှု ပြန်အမ်း", "purchase_return", is_deduction=True, state_key="show_cos")
-    cs_closing = num_input("အပိတ် ကုန်ချောလက်ကျန်", "closing_stock_finished", is_deduction=True, state_key="show_cos")
+
+    # ၃။ Closing Stock
+    cs_closing = st.number_input(
+        "အပိတ် ကုန်ချောလက်ကျန် (Less: Closing Stock)", 
+        value=int(st.session_state.tpl_data.get("closing_stock_finished", 0)),
+        min_value=0, step=1000, format="%d", key="cs_closing"
+    )
+    st.session_state.tpl_data["closing_stock_finished"] = cs_closing
     
+    # ⭐ Closing Stock အောက်မှာ Custom Input
+    custom_closing_total = render_cost_custom_items("closing_stock", "Custom Closing Stock")
+    final_closing_stock = cs_closing + custom_closing_total
+
     custom_cos_total = render_custom_items("cos", "Custom Cost of Sales")
 
-    total_cos = (mfg_cost_input + cs_opening + cs_purchases + cs_carriage - cs_return - cs_closing + custom_cos_total)
+    # ⭐ တွက်ချက်မှုမှာ final တန်ဖိုးတွေ သုံးမယ်
+    total_cos = (mfg_cost_input + final_opening_stock + final_purchases + cs_carriage - cs_return - final_closing_stock + custom_cos_total)
     subtotal_box("အရောင်း ကုန်ကျစရိတ် စုစုပေါင်း", total_cos, "#1976d2")
 
     st.markdown("<br>", unsafe_allow_html=True)
@@ -485,15 +555,20 @@ col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     if st.button(t('save'), use_container_width=True, type="primary"):
-        play_click_sound()  # ⭐ ဒါလေး ထည့်ပါ
+        play_click_sound()
         try:
             data_json = json.dumps(st.session_state.tpl_data, ensure_ascii=False)
+            
+            # ⭐ Custom Data နှစ်မျိုးလုံးကို ပေါင်းပြီး သိမ်းမယ်
+            combined_custom = dict(st.session_state.custom_data)
+            combined_custom.update(st.session_state.tpl_cost_custom)
+            
             db.save_statement(
                 client_id=client_id,
                 statement_type="trading_pl",
                 period_end=st.session_state.tpl_period,
                 data_json=data_json,
-                custom_data=st.session_state.custom_data,
+                custom_data=combined_custom,
             )
             st.success("✓ သိမ်းပြီးပါပြီ" if st.session_state.get("language") == "my" else "✓ Saved successfully")
             st.balloons()
@@ -506,7 +581,11 @@ with col2:
         play_click_sound()
         try:
             pdf_data = dict(st.session_state.tpl_data)
-            pdf_data["custom_data"] = st.session_state.custom_data
+            
+            # ⭐ Custom Data နှစ်မျိုးလုံးကို ပေါင်းပြီး ပို့မယ်
+            combined_custom = dict(st.session_state.custom_data)
+            combined_custom.update(st.session_state.tpl_cost_custom)
+            pdf_data["custom_data"] = combined_custom
             
             # Checkbox အနေအထားတွေ ထည့်မယ်
             pdf_data["_show_revenue"] = st.session_state.show_revenue
@@ -522,9 +601,10 @@ with col2:
             # ကုန်ပစ္စည်းဝယ်ယူမှု၊ သယ်ယူပို့ဆောင်ခ တွေကို ထည့်မယ်
             pdf_data["purchases"] = cs_purchases
             pdf_data["carriage_inward"] = cs_carriage
-            pdf_data["add_purchases"] = cs_purchases
+            pdf_data["add_purchases"] = final_purchases
             pdf_data["add_carriage_inward"] = cs_carriage
             pdf_data["add_manufacturing_cost"] = mfg_cost_input
+            pdf_data["closing_stock_finished"] = final_closing_stock
             
             pdf_data["_total_revenue"] = total_revenue
             pdf_data["_total_cos"] = total_cos
@@ -535,8 +615,8 @@ with col2:
             pdf_bytes = generate_pdf(
                 statement_type="trading_pl",
                 client_name=client["name"],
-                client_id=st.session_state.get("selected_client_id"), # ⭐ ဒါလေး ထည့်ပါ
-                business_name=client.get("business_name", ""),       # ⭐ ဒါလေး ထည့်ပါ
+                client_id=st.session_state.get("selected_client_id"),
+                business_name=client.get("business_name", ""),
                 business_type=client.get("business_type", ""),
                 data=pdf_data,
                 period_end=st.session_state.tpl_period,
@@ -555,14 +635,15 @@ with col2:
             
 with col3:
     if st.button("🔄 Reset", use_container_width=True):
-        play_click_sound()  # ⭐ ဒါလေး ထည့်ပါ
+        play_click_sound()
         st.session_state.tpl_data = {}
         st.session_state.custom_data = {"revenue": [], "cos": [], "expenses": []}
+        st.session_state.tpl_cost_custom = {"opening_stock": [], "purchases": [], "closing_stock": []}
         st.rerun()
 
 with col4:
     if st.button(t('detail'), use_container_width=True):
-        play_click_sound()  # ⭐ ဒါလေး ထည့်ပါ
+        play_click_sound()
         st.switch_page("pages/2_Client_Detail.py")
 
 # ============================================================
