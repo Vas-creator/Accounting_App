@@ -435,11 +435,18 @@ def calculate_trading_pl(data: Dict[str, Any]) -> Dict[str, Any]:
 
 def calculate_balance_sheet(data: Dict[str, Any]) -> Dict[str, Any]:
     t = merge_template_with_data("balance_sheet", data)
+    custom_data = data.get("custom_data", {})
 
+    # --- Current Assets ---
     ca = t["assets"]["current_assets"]["items"]
     current_assets_total = sum(parse_number(item["value"]) for item in ca.values())
+    # ⭐ Custom Current Assets ပေါင်းထည့်မယ်
+    for item in custom_data.get("current_assets", []):
+        if item.get("value"):
+            current_assets_total += parse_number(item["value"])
     t["assets"]["current_assets"]["current_assets_total"] = current_assets_total
 
+    # --- Fixed Assets ---
     fa = t["assets"]["fixed_assets"]["items"]
     fixed_assets_total = (
         sum(
@@ -449,18 +456,29 @@ def calculate_balance_sheet(data: Dict[str, Any]) -> Dict[str, Any]:
         )
         - parse_number(fa["less_depreciation"]["value"])
     )
+    # ⭐ Custom Fixed Assets ပေါင်းထည့်မယ်
+    for item in custom_data.get("fixed_assets", []):
+        if item.get("value"):
+            fixed_assets_total += parse_number(item["value"])
     t["assets"]["fixed_assets"]["fixed_assets_total"] = fixed_assets_total
 
     total_assets = current_assets_total + fixed_assets_total
     t["assets"]["total_assets"]["value"] = total_assets
 
+    # --- Liabilities ---
     cl = t["liabilities"]["current_liabilities"]["items"]
     current_liabilities_total = sum(parse_number(item["value"]) for item in cl.values())
+    # ⭐ Custom Liabilities ပေါင်းထည့်မယ်
+    for item in custom_data.get("liabilities", []):
+        if item.get("value"):
+            current_liabilities_total += parse_number(item["value"])
+            
     t["liabilities"]["current_liabilities"]["current_liabilities_total"] = current_liabilities_total
 
     total_liabilities = current_liabilities_total
     t["liabilities"]["total_liabilities"]["value"] = total_liabilities
 
+    # --- Capital ---
     cap = t["capital"]["items"]
     capital_total = (
         parse_number(cap["eq_capital"]["value"])
@@ -468,6 +486,11 @@ def calculate_balance_sheet(data: Dict[str, Any]) -> Dict[str, Any]:
         + parse_number(cap["eq_profit"]["value"])
         - parse_number(cap["eq_drawing"]["value"])
     )
+    # ⭐ Custom Equity ပေါင်းထည့်မယ်
+    for item in custom_data.get("equity", []):
+        if item.get("value"):
+            capital_total += parse_number(item["value"])
+            
     t["capital"]["capital_total"] = capital_total
 
     liab_cap = total_liabilities + capital_total
@@ -475,8 +498,9 @@ def calculate_balance_sheet(data: Dict[str, Any]) -> Dict[str, Any]:
     diff = total_assets - liab_cap
     t["balance_check"]["difference"] = diff
     t["balance_check"]["is_balanced"] = abs(diff) < 0.01
+    
+    t["custom_data"] = custom_data # ⭐ ဒါလေး ထည့်ပေးဖို့ မမေ့ပါနဲ့
     return t
-
 
 # ============================================================
 # 2. HTML RENDER HELPERS
@@ -781,6 +805,9 @@ def _render_balance_sheet_html(t: Dict[str, Any], lang: str, data: Dict[str, Any
     show_assets = data.get("_show_bs_assets", {})
     show_equity = data.get("_show_bs_equity", {})
     show_liab = data.get("_show_bs_liab", {})
+    
+    # ⭐ Custom Data ကို ယူမယ်
+    custom_data = t.get("custom_data", {})
 
     # ==================== ASSETS ====================
     html += f'<tr class="section-header"><td colspan="4">{get_pdf_text(lang, "bs_assets_title")}</td></tr>'
@@ -797,6 +824,11 @@ def _render_balance_sheet_html(t: Dict[str, Any], lang: str, data: Dict[str, Any
             if is_ded:
                 val_str = f"({val_str})"
             html += _build_row_4(get_sr(), get_pdf_text(lang, k), val_str, "")
+            
+    # ⭐ Custom Fixed Assets ထည့်မယ်
+    for item in custom_data.get("fixed_assets", []):
+        if item.get("label") and item.get("value", 0) > 0:
+            html += _build_row_4(get_sr(), item["label"], format_number(item["value"]), "")
 
     # --- B. Current Assets ---
     total_ca_val = t["assets"]["current_assets"]["current_assets_total"]
@@ -806,12 +838,16 @@ def _render_balance_sheet_html(t: Dict[str, Any], lang: str, data: Dict[str, Any
     for k, item in ca.items():
         if show_assets.get(k, True):
             html += _build_row_4(get_sr(), get_pdf_text(lang, k), format_number(item["value"]), "")
+            
+    # ⭐ Custom Current Assets ထည့်မယ်
+    for item in custom_data.get("current_assets", []):
+        if item.get("label") and item.get("value", 0) > 0:
+            html += _build_row_4(get_sr(), item["label"], format_number(item["value"]), "")
 
     # Total Assets
     html += _build_row_4("", get_pdf_text(lang, "total_assets"), "", format_number(t["assets"]["total_assets"]["value"]), css="total-row", is_bold=True)
 
     # ==================== CAPITAL AND LIABILITIES ====================
-    # ⭐ ခေါင်းစဉ်ပြောင်းမယ်
     cap_liab_title = "CAPITAL AND LIABILITIES" if lang == "en" else "အရင်းနှင့် အကြွေးများ"
     html += f'<tr class="section-header"><td colspan="4">{cap_liab_title}</td></tr>'
     
@@ -828,6 +864,11 @@ def _render_balance_sheet_html(t: Dict[str, Any], lang: str, data: Dict[str, Any
         html += _build_row_4(get_sr(), get_pdf_text(lang, "eq_profit"), format_number(cap["eq_profit"]["value"]), "")
     if show_equity.get("eq_drawing", True):
         html += _build_row_4(get_sr(), get_pdf_text(lang, "eq_drawing"), f"({format_number(cap['eq_drawing']['value'])})", "")
+        
+    # ⭐ Custom Equity ထည့်မယ်
+    for item in custom_data.get("equity", []):
+        if item.get("label") and item.get("value", 0) > 0:
+            html += _build_row_4(get_sr(), item["label"], format_number(item["value"]), "")
 
     # --- D. Total Current Liabilities ---
     total_cl_val = t["liabilities"]["current_liabilities"]["current_liabilities_total"]
@@ -837,8 +878,11 @@ def _render_balance_sheet_html(t: Dict[str, Any], lang: str, data: Dict[str, Any
     for k, item in cl.items():
         if show_liab.get(k, True):
             html += _build_row_4(get_sr(), get_pdf_text(lang, k), format_number(item["value"]), "")
-
-    # ⭐ "Total Current Liabilities" အောက်က လိုင်းကို ဖျောက်ထားပါတယ်။
+            
+    # ⭐ Custom Liabilities ထည့်မယ်
+    for item in custom_data.get("liabilities", []):
+        if item.get("label") and item.get("value", 0) > 0:
+            html += _build_row_4(get_sr(), item["label"], format_number(item["value"]), "")
 
     html += _build_row_4("", get_pdf_text(lang, "total_liabilities"), "", format_number(t["liabilities"]["total_liabilities"]["value"]), css="total-row", is_bold=True)
 

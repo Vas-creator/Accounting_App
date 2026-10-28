@@ -36,6 +36,7 @@ if not client_id:
     if st.button("← ဖောက်သည် စာရင်းသို့ ပြန်" if st.session_state.get("language", "my") == "my" else "← Back to Clients"):
         st.switch_page("pages/1_Clients.py")
     st.stop()
+
 try:
     client = db.get_client(client_id)
 except Exception as e:
@@ -44,10 +45,6 @@ except Exception as e:
 
 if not client:
     st.error("❌ ဖောက်သည် မတွေ့ပါ" if st.session_state.get("language", "my") == "my" else "❌ Client not found")
-    st.stop()
-
-if not client:
-    st.error(f"❌ ဖောက်သည် မတွေ့ပါ" if st.session_state.get("language", "my") == "my" else "❌ Client not found")
     st.stop()
 
 # ⭐ ဒီနေရာမှာ ထည့်ပါ (client ကို ရပြီးမှ ဒါကို သတ်မှတ်မယ်)
@@ -194,6 +191,15 @@ if "bs_data" not in st.session_state:
     else:
         st.session_state.bs_data = {}
 
+# ⭐ Custom Data အတွက် Session State
+if "bs_custom_data" not in st.session_state:
+    st.session_state.bs_custom_data = {
+        "current_assets": [],
+        "fixed_assets": [],
+        "equity": [],
+        "liabilities": []
+    }
+
 # ===========================================================
 # SESSION STATE FOR SHOW/HIDE ASSETS, EQUITY, LIABILITIES
 # ===========================================================
@@ -218,7 +224,6 @@ auto_net_profit = 0.0
 auto_depreciation = 0.0
 
 try:
-    # လက်ရှိ ရွေးထားတဲ့ ကာလနဲ့ ကိုက်ညီတဲ့ Trading PL ကို ယူမယ်
     tpl_existing = db.get_statement(client_id, "trading_pl", period_end=st.session_state.bs_date)
     if tpl_existing and tpl_existing.get("data"):
         raw_tpl = tpl_existing["data"]
@@ -243,12 +248,11 @@ def num_input(label: str, key: str, is_deduction: bool = False, default: float =
 
     prefix = "➖ " if is_deduction else ""
     
-    # ⭐ Checkbox ပါအောင် ပြင်မယ်
     if state_key:
         col_show, col_input = st.columns([0.5, 9.5])
         with col_show:
             default_show = st.session_state.get(state_key, {}).get(key, True)
-            show = st.checkbox("", value=default_show, key=f"show_bs_{key}")
+            show = st.checkbox(" ", value=default_show, key=f"show_bs_{key}")
             st.session_state[state_key][key] = show
         
         with col_input:
@@ -265,7 +269,6 @@ def num_input(label: str, key: str, is_deduction: bool = False, default: float =
                 st.session_state.bs_data[key] = 0.0
                 return 0.0
     else:
-        # Checkbox မပါရင် ရိုးရိုးပဲ
         result = st.number_input(
             f"{prefix}{label}",
             value=int(value) if value else 0,
@@ -288,6 +291,36 @@ def subtotal_box(label: str, value: float, color: str = "#1976d2"):
         unsafe_allow_html=True,
     )
 
+def render_bs_custom_items(section_key: str, title: str):
+    st.markdown(f"**➕ {title}**")
+    items = st.session_state.bs_custom_data.get(section_key, [])
+    
+    for i, item in enumerate(items):
+        col_x, col_y, col_z = st.columns([2, 2, 1])
+        with col_x:
+            item["label"] = st.text_input("Name", value=item.get("label", ""), key=f"bs_{section_key}_label_{i}", label_visibility="collapsed")
+        with col_y:
+            item["value"] = st.number_input(
+                "Amount", value=int(item.get("value", 0)), 
+                step=1000, format="%d", key=f"bs_{section_key}_value_{i}", 
+                label_visibility="collapsed"
+            )
+        with col_z:
+            if st.button("🗑️", key=f"bs_{section_key}_del_{i}"):
+                items.pop(i)
+                st.session_state.bs_custom_data[section_key] = items
+                st.rerun()
+    
+    if st.button(f"➕ {'Item ထည့်' if st.session_state.get('language') == 'my' else 'Add Item'}", key=f"bs_add_{section_key}"):
+        items.append({"label": "", "value": 0})
+        st.session_state.bs_custom_data[section_key] = items
+        st.rerun()
+    
+    total = sum(item.get("value", 0) for item in items)
+    if total > 0:
+        st.markdown(f"**{'စုစုပေါင်း' if st.session_state.get('language') == 'my' else 'Total'}: {format_number(total)}**")
+    return total
+
 # ============================================================
 # 3 COLUMNS LAYOUT
 # ============================================================
@@ -301,8 +334,11 @@ with col1:
     nca_machine = num_input("စက်ပစ္စည်း (Machine)", "nca_machine", state_key="show_bs_assets")
     nca_furniture = num_input("ပရိဘောဂ (Furniture)", "nca_furniture", state_key="show_bs_assets")
     nca_vehicle = num_input("ယာဉ် (Vehicle)", "nca_vehicle", state_key="show_bs_assets")
+    
+    # ⭐ Fixed Assets Custom Items
+    custom_nca_total = render_bs_custom_items("fixed_assets", "Custom Fixed Assets")
 
-    total_nca = nca_land + nca_building + nca_machine + nca_furniture + nca_vehicle
+    total_nca = nca_land + nca_building + nca_machine + nca_furniture + nca_vehicle + custom_nca_total
     subtotal_box("ပုံသေ ပိုင်ဆိုင်မှု စုစုပေါင်း" if st.session_state.get("language") == "my" else "Total Fixed Assets", total_nca, "#2e7d32")
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -311,8 +347,11 @@ with col1:
     ca_receivable = num_input("ရရန်ကျန်ငွေ (A/C Receivable)", "ca_receivable", state_key="show_bs_assets")
     ca_advance = num_input("ကြိုတင်ပေးငွေ (Advance Payments)", "ca_advance", state_key="show_bs_assets")
     ca_cash = num_input("လက်ထဲ/ဘဏ် ငွေသား (Cash)", "ca_cash", state_key="show_bs_assets")
+    
+    # ⭐ Current Assets Custom Items
+    custom_ca_total = render_bs_custom_items("current_assets", "Custom Current Assets")
 
-    total_ca = ca_inventories + ca_receivable + ca_advance + ca_cash
+    total_ca = ca_inventories + ca_receivable + ca_advance + ca_cash + custom_ca_total
     subtotal_box("လက်ရှိ ပိုင်ဆိုင်မှု စုစုပေါင်း" if st.session_state.get("language") == "my" else "Total Current Assets", total_ca, "#2e7d32")
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -329,7 +368,6 @@ with col1:
 
 with col2:
     st.markdown(f'<h3 style="color: #c2185b; font-size: 1.15rem; border-bottom: 2px solid #f093fb; padding-bottom: 0.3rem;">{"၃။ အရင်း ငွေ (Equity)" if st.session_state.get("language") == "my" else "3. Equity"}</h3>', unsafe_allow_html=True)
-    # eq_capital = num_input("အရင်း (Capital)" if st.session_state.get("language") == "my" else "Capital", "eq_capital")
     eq_capital = num_input("အရင်း (Capital)", "eq_capital", state_key="show_bs_equity")
     eq_retain = num_input("စုဆောင်း အမြတ် (Retain Earning)", "eq_retain", state_key="show_bs_equity")
 
@@ -345,16 +383,22 @@ with col2:
     st.session_state.bs_data["eq_profit"] = eq_profit
 
     eq_drawing = num_input("ပိုင်ရှင် ထုတ်ယူမှု (Drawing)" if st.session_state.get("language") == "my" else "Drawing", "eq_drawing", is_deduction=True)
-    total_equity = eq_capital + eq_retain + eq_profit - eq_drawing
+    
+    # ⭐ Equity Custom Items
+    custom_eq_total = render_bs_custom_items("equity", "Custom Equity")
+    
+    total_equity = eq_capital + eq_retain + eq_profit - eq_drawing + custom_eq_total
     subtotal_box("အရင်း စုစုပေါင်း" if st.session_state.get("language") == "my" else "Total Equity", total_equity, "#c2185b")
     st.markdown("<br>", unsafe_allow_html=True)
 
     st.markdown(f'<h3 style="color: #c2185b; font-size: 1.15rem; border-bottom: 2px solid #f093fb; padding-bottom: 0.3rem;">{"၄။ အကြွေးများ (Liabilities)" if st.session_state.get("language") == "my" else "4. Liabilities"}</h3>', unsafe_allow_html=True)
-    # liab_bank_loan = num_input("ဘဏ် ချေးငွေ (Bank Loan)" if st.session_state.get("language") == "my" else "Bank Loan", "liab_bank_loan")
     liab_bank_loan = num_input("ဘဏ် ချေးငွေ (Bank Loan)", "liab_bank_loan", state_key="show_bs_liab")
     liab_payable = num_input("ပေးရန်ကျန်ငွေ (A/C Payable)", "liab_payable", state_key="show_bs_liab")
+    
+    # ⭐ Liabilities Custom Items
+    custom_liab_total = render_bs_custom_items("liabilities", "Custom Liabilities")
 
-    total_liab = liab_bank_loan + liab_payable
+    total_liab = liab_bank_loan + liab_payable + custom_liab_total
     subtotal_box("အကြွေး စုစုပေါင်း" if st.session_state.get("language") == "my" else "Total Liabilities", total_liab, "#c2185b")
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -428,7 +472,7 @@ col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     if st.button(t('save'), use_container_width=True, type="primary"):
-        play_click_sound()  # ⭐ ဒါလေး ထည့်ပါ
+        play_click_sound()
         try:
             bs_data = st.session_state.bs_data
             bs_data["ca_inventories"] = ca_inventories
@@ -453,6 +497,7 @@ with col1:
                 statement_type="balance_sheet",
                 period_end=st.session_state.bs_date,
                 data_json=data_json,
+                custom_data=st.session_state.bs_custom_data, # ⭐ Custom Data ပါ သိမ်းမယ်
             )
             st.success("✓ သိမ်းပြီးပါပြီ" if st.session_state.get("language") == "my" else "✓ Saved successfully")
             st.balloons()
@@ -463,13 +508,11 @@ with col2:
     if st.button("📄 PDF", use_container_width=True):
         play_click_sound()
         try:
-            # ⭐ Checkbox အနေအထားတွေ ထည့်မယ်
             pdf_data = dict(st.session_state.bs_data)
             pdf_data["_show_bs_assets"] = st.session_state.show_bs_assets
             pdf_data["_show_bs_equity"] = st.session_state.show_bs_equity
             pdf_data["_show_bs_liab"] = st.session_state.show_bs_liab
-
-            # မင်းရဲ့ 5_Balance_Sheet.py ထဲက PDF ခလုတ်နေရာမှာ
+            pdf_data["custom_data"] = st.session_state.bs_custom_data # ⭐ PDF ထဲ Custom Data ထည့်မယ်
 
             pdf_bytes = generate_pdf(
                 statement_type="balance_sheet",
@@ -478,7 +521,7 @@ with col2:
                 business_name=client.get("business_name", ""),       
                 business_type=client.get("business_type", ""),
                 data=pdf_data,
-                as_at_date=st.session_state.bs_date, # ⭐ bs_period အစား bs_date ဖြစ်ရပါမယ်
+                as_at_date=st.session_state.bs_date, 
                 lang=st.session_state.language,
             )
             st.download_button(
@@ -493,13 +536,19 @@ with col2:
 
 with col3:
     if st.button("🔄 Reset", use_container_width=True):
-        play_click_sound()  # ⭐ ဒါလေး ထည့်ပါ
+        play_click_sound()
         st.session_state.bs_data = {}
+        st.session_state.bs_custom_data = {
+            "current_assets": [],
+            "fixed_assets": [],
+            "equity": [],
+            "liabilities": []
+        }
         st.rerun()
 
 with col4:
     if st.button(t('detail'), use_container_width=True):
-        play_click_sound()  # ⭐ ဒါလေး ထည့်ပါ
+        play_click_sound()
         st.switch_page("pages/2_Client_Detail.py")
 
 st.divider()

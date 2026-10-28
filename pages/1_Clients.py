@@ -27,25 +27,69 @@ if not st.session_state.get("authentication_status"):
 # BUSINESS TYPES
 # ============================================================
 
-BUSINESS_TYPES = [
-    "ကုန်ထုတ်လုပ်ငန်း (Manufacturing)",
-    "အရောင်းအဝယ်လုပ်ငန်း (Trading)",
-    "ဝန်ဆောင်မှုလုပ်ငန်း (Service)",
-    "လယ်ယာစိုက်ပျိုးရေး (Agriculture)",
-    "ဆောက်လုပ်ရေး (Construction)",
-    "သယ်ယူပို့ဆောင်ရေး (Transportation)",
-    "လက်လီ/လက်ကား (Retail/Wholesale)",
-    "အခြား (Others)",
+# ============================================================
+# BUSINESS TYPES (Bilingual)
+# ============================================================
+
+BUSINESS_TYPES_MY = [
+    "ကုန်ထုတ်လုပ်ငန်း",
+    "အရောင်းအဝယ်လုပ်ငန်း",
+    "ဝန်ဆောင်မှုလုပ်ငန်း",
+    "လယ်ယာစိုက်ပျိုးရေး",
+    "ဆောက်လုပ်ရေး",
+    "သယ်ယူပို့ဆောင်ရေး",
+    "လက်လီ/လက်ကား",
+    "အခြား",
 ]
 
-MANUFACTURING_TYPES = [
-    "ဆန်စက် (Rice Mill)",
-    "သစ်စက် (Saw Mill)",
-    "အထည်အလိပ် (Textile)",
-    "အစားအစာ ထုတ်လုပ်မှု (Food Processing)",
+BUSINESS_TYPES_EN = [
+    "Manufacturing",
+    "Trading",
+    "Service",
+    "Agriculture",
+    "Construction",
+    "Transportation",
+    "Retail/Wholesale",
+    "Others",
+]
+
+MANUFACTURING_TYPES_MY = [
+    "ဆန်စက်",
+    "သစ်စက်",
+    "အထည်အလိပ်",
+    "အစားအစာ ထုတ်လုပ်မှု",
     "အခြား (Other)",
 ]
 
+MANUFACTURING_TYPES_EN = [
+    "Rice Mill",
+    "Saw Mill",
+    "Textile",
+    "Food Processing",
+    "Other",
+]
+
+TRADING_TYPES_MY = [
+    "ဆန်စပါးနှင့်ပဲမျိုးစုံရောင်းဝယ်ရေးလုပ်ငန်း",
+    "ဓါတ်မြေဩဇာနှင့်စိုက်ပျိုးရေးဆေးရောင်းဝယ်ရေးလုပ်ငန်း",
+    "ရွှေဆိုင်လုပ်ငန်း",
+    "အရက်ဆိုင်လုပ်ငန်း",
+    "အုတ်၊ သဲ၊ ကျောက် ရောင်းဝယ်ရေးလုပ်ငန်း",
+    "ဆန်နှင့် အိမ်ဆောက်ပစ္စည်းအရောင်းဆိုင်လုပ်ငန်း",
+    "ဒိန်ချဉ် အရောင်းဆိုင်နှင့် လက်ကားဖြန့်ချိရေးလုပ်ငန်း",
+    "ဆောက်လုပ်ရေးပစ္စည်းအရောင်းဆိုင်လုပ်ငန်း",
+]
+
+TRADING_TYPES_EN = [
+    "Rice, Paddy and Bean Trading Business",
+    "Fertilizer, Agricultural Chemical Store",
+    "Gold and Jewellery Shop Business",
+    "Liquor Store Business",
+    "Brick, Sand, River Gravel Trading Business",
+    "Rice, House Building Material Trading Business",
+    "Yogurt Shop and Whole Sale Business",
+    "Construction Material Shop Business",
+]
 # ============================================================
 # PAGE HEADER
 # ============================================================
@@ -135,40 +179,60 @@ if st.session_state.show_add_form:
     )
     
     col1, col2 = st.columns(2)
+    lang = st.session_state.get("language", "my")
     
     with col1:
-        # Client Name ကို မဖြစ်မနေ ထည့်ရန် မလိုတော့ပါ
         name = st.text_input(
             f"{t('client_name')} (Optional)",
-            placeholder="ဥပမာ — ရွှေမြို့တော် ကုမ္ပဏီ" if st.session_state.get("language") == "my" else "e.g. — Shwe Myo Taw Co.",
+            placeholder="ဥပမာ — ရွှေမြို့တော် ကုမ္ပဏီ" if lang == "my" else "e.g. — Shwe Myo Taw Co.",
             key="add_name",
         )
         business_name = st.text_input(
             t('business_name'),
-            placeholder="ဥပမာ — ရွှေမြို့တော် လီမိတက်" if st.session_state.get("language") == "my" else "e.g. — Shwe Myo Taw Ltd.",
+            placeholder="ဥပမာ — ရွှေမြို့တော် လီမိတက်" if lang == "my" else "e.g. — Shwe Myo Taw Ltd.",
             key="add_business_name",
         )
         
+        # ⭐ ဘာသာစကားအလိုက် Business Type List ရွေးမယ်
+        current_business_types = BUSINESS_TYPES_MY if lang == "my" else BUSINESS_TYPES_EN
+        
+                # ⭐ on_change ကို ထည့်ပါ (ရွေးတာနဲ့ Refresh ဖြစ်အောင်)
+        def on_business_type_change():
+            pass # ဒီ function က ဘာမှ မလုပ်ပါဘူး၊ Refresh ဖြစ်ဖို့ပဲ လုပ်တာပါ
+
         business_type = st.selectbox(
             t('business_type'),
-            options=[""] + BUSINESS_TYPES,
+            options=[""] + current_business_types,
             key="add_business_type_select",
+            on_change=on_business_type_change, # ⭐ ဒါလေး ထည့်ပါ
         )
         
-        # အကယ်၍ "အခြား (Others)" ကို ရွေးခဲ့ရင် Custom Input ပြမယ်
-        custom_business_type = ""
-        if business_type == "အခြား (Others)":
-            custom_business_type = st.text_input(
-                "အခြား လုပ်ငန်းအမျိုးအစား ရိုက်ထည့်ပါ" if st.session_state.get("language") == "my" else "Please specify Business Type",
-                key="add_custom_business_type"
+        # ⭐ Manufacturing Dropdown
+        manufacturing_type = ""
+        if business_type in ["ကုန်ထုတ်လုပ်ငန်း", "Manufacturing"]:
+            current_mfg_types = MANUFACTURING_TYPES_MY if lang == "my" else MANUFACTURING_TYPES_EN
+            manufacturing_type = st.selectbox(
+                "ကုန်ထုတ်လုပ်မှု အမျိုးအစား" if lang == "my" else "Manufacturing Type",
+                options=[""] + current_mfg_types,
+                key="add_manufacturing_type_select",
             )
         
-        manufacturing_type = ""
-        if business_type == "ကုန်ထုတ်လုပ်ငန်း (Manufacturing)":
-            manufacturing_type = st.selectbox(
-                "ကုန်ထုတ်လုပ်မှု အမျိုးအစား" if st.session_state.get("language") == "my" else "Manufacturing Type",
-                options=[""] + MANUFACTURING_TYPES,
-                key="add_manufacturing_type_select",
+        # ⭐ Trading Dropdown
+        trading_type = ""
+        if business_type in ["အရောင်းအဝယ်လုပ်ငန်း", "Trading"]:
+            current_trading_types = TRADING_TYPES_MY if lang == "my" else TRADING_TYPES_EN
+            trading_type = st.selectbox(
+                "အရောင်းအဝယ် အမျိုးအစား" if lang == "my" else "Trading Type",
+                options=[""] + current_trading_types,
+                key="add_trading_type_select",
+            )
+        
+        # ⭐ "အခြား" ရွေးရင် Custom Input ပြမယ်
+        custom_business_type = ""
+        if business_type in ["အခြား", "Others"]:
+            custom_business_type = st.text_input(
+                "အခြား လုပ်ငန်းအမျိုးအစား ရိုက်ထည့်ပါ" if lang == "my" else "Please specify Business Type",
+                key="add_custom_business_type"
             )
     
     with col2:
@@ -178,14 +242,14 @@ if st.session_state.show_add_form:
             key="add_email",
         )
         fiscal_year_end = st.text_input(
-            "ဘဏ္ဍာရေးနှစ် ကုန်ဆုံးရက်" if st.session_state.get("language") == "my" else "Fiscal Year End",
+            "ဘဏ္ဍာရေးနှစ် ကုန်ဆုံးရက်" if lang == "my" else "Fiscal Year End",
             value="09-30",
             placeholder="MM-DD",
             key="add_fiscal_year_end",
         )
         address = st.text_input(
             t('address'),
-            placeholder="ဥပမာ — ရန်ကုန်မြို့" if st.session_state.get("language") == "my" else "e.g. — Yangon",
+            placeholder="ဥပမာ — ရန်ကုန်မြို့" if lang == "my" else "e.g. — Yangon",
             key="add_address",
         )
     
@@ -194,23 +258,23 @@ if st.session_state.show_add_form:
     col_a, col_b, col_c = st.columns([1, 1, 3])
     with col_a:
         if st.button(t('save'), use_container_width=True, type="primary", key="add_save_btn"):
-            # Validation ကို Business Name ပေါ်မှာ မူတည်ပြီး စစ်မယ်
             if not business_name or len(business_name.strip()) < 2:
-                st.error("❌ လုပ်ငန်း အမည် ဖြည့်ပါ (အနည်းဆုံး ၂ လုံး)" if st.session_state.get("language") == "my" else "❌ Please enter Business Name (min 2 chars)")
+                st.error("❌ လုပ်ငန်း အမည် ဖြည့်ပါ (အနည်းဆုံး ၂ လုံး)" if lang == "my" else "❌ Please enter Business Name (min 2 chars)")
             else:
                 try:
                     final_business_type = business_type
                     
-                    # Business Type က Other ဖြစ်ရင် ကိုယ်ရိုက်ထည့်တာကို ယူမယ်
-                    if business_type == "အခြား (Others)" and custom_business_type:
+                    if business_type in ["အခြား", "Others"] and custom_business_type:
                         final_business_type = custom_business_type.strip()
                     
-                    # Manufacturing ဖြစ်ရင် နောက်က manufacturing type ကို ဆက်တွဲမယ်
-                    if business_type == "ကုန်ထုတ်လုပ်ငန်း (Manufacturing)" and manufacturing_type:
+                    if business_type in ["ကုန်ထုတ်လုပ်ငန်း", "Manufacturing"] and manufacturing_type:
                         final_business_type = f"{business_type} - {manufacturing_type}"
+                    
+                    if business_type in ["အရောင်းအဝယ်လုပ်ငန်း", "Trading"] and trading_type:
+                        final_business_type = f"{business_type} - {trading_type}"
 
                     db.create_client(
-                        name=clean_html(name.strip()), # မထည့်ထားရင် အလွတ်သွားမယ်
+                        name=clean_html(name.strip()),
                         business_name=clean_html(business_name.strip()),
                         business_type=final_business_type,
                         email=email.strip(),
@@ -219,7 +283,7 @@ if st.session_state.show_add_form:
                     )
                     
                     display_name = name if name else business_name
-                    st.success(f"✓ ဖောက်သည် '{display_name}' ထည့်ပြီးပါပြီ" if st.session_state.get("language") == "my" else f"✓ Client '{display_name}' added successfully")
+                    st.success(f"✓ ဖောက်သည် '{display_name}' ထည့်ပြီးပါပြီ" if lang == "my" else f"✓ Client '{display_name}' added successfully")
                     st.session_state.show_add_form = False
                     st.rerun()
                 except Exception as e:
@@ -250,6 +314,7 @@ if st.session_state.editing_client_id is not None:
         )
         
         col1, col2 = st.columns(2)
+        lang = st.session_state.get("language", "my")
         
         with col1:
             name = st.text_input(
@@ -263,55 +328,82 @@ if st.session_state.editing_client_id is not None:
                 key="edit_business_name",
             )
             
+            # ⭐ လက်ရှိ သိမ်းထားတဲ့ Business Type ကို ခွဲထုတ်မယ်
             current_type = client.get("business_type", "") or ""
             base_type = current_type
             current_mfg_type = ""
+            current_trading_type = ""
             
-            # " - " ပါရင် ခွဲမယ် (Manufacturing အတွက်)
             if " - " in current_type:
                 parts = current_type.split(" - ")
                 base_type = parts[0]
-                current_mfg_type = parts[1] if len(parts) > 1 else ""
+                detail_type = parts[1] if len(parts) > 1 else ""
+                
+                if base_type in ["ကုန်ထုတ်လုပ်ငန်း", "Manufacturing"]:
+                    current_mfg_type = detail_type
+                elif base_type in ["အရောင်းအဝယ်လုပ်ငန်း", "Trading"]:
+                    current_trading_type = detail_type
             
-            # Business Types ထဲမှာ မပါရင် "အခြား (Others)" လို့ သတ်မှတ်မယ်
-            if base_type not in BUSINESS_TYPES:
+            current_business_types = BUSINESS_TYPES_MY if lang == "my" else BUSINESS_TYPES_EN
+            
+            # "အခြား" ဖြစ်နေရင် သတ်မှတ်မယ်
+            if base_type not in current_business_types:
                 if base_type:
-                    base_type = "အခြား (Others)"
-                    current_mfg_type = "" 
-
-            type_index = 0
-            if base_type in BUSINESS_TYPES:
-                type_index = BUSINESS_TYPES.index(base_type) + 1
+                    base_type = "အခြား (Others)" if lang == "my" else "Others"
             
+            type_index = 0
+            if base_type in current_business_types:
+                type_index = current_business_types.index(base_type) + 1
+            
+            def on_edit_business_type_change():
+                pass
+
             business_type = st.selectbox(
                 t('business_type'),
-                options=[""] + BUSINESS_TYPES,
+                options=[""] + current_business_types,
                 index=type_index,
                 key="edit_business_type_select",
+                on_change=on_edit_business_type_change, # ⭐ ဒါလေး ထည့်ပါ
             )
 
-            # Business Type က Other ဖြစ်ရင် Custom Input ပြမယ်
+            # Other အတွက် Custom Input
             custom_business_type = ""
-            if business_type == "အခြား (Others)":
-                # တကယ်လို့ မူရင်း type က Others ဖြစ်နေရင် မူရင်းစာသားကို ပြထားမယ်
-                default_custom = current_type if (base_type == "အခြား (Others)" and current_type != "အခြား (Others)") else ""
+            if business_type in ["အခြား", "Others"]:
+                default_custom = current_type if (base_type in ["အခြား", "Others"] and current_type != base_type) else ""
                 custom_business_type = st.text_input(
-                    "အခြား လုပ်ငန်းအမျိုးအစား ရိုက်ထည့်ပါ" if st.session_state.get("language") == "my" else "Please specify Business Type",
+                    "အခြား လုပ်ငန်းအမျိုးအစား ရိုက်ထည့်ပါ" if lang == "my" else "Please specify Business Type",
                     value=default_custom,
                     key="edit_custom_business_type"
                 )
 
-            mfg_index = 0
-            if current_mfg_type in MANUFACTURING_TYPES:
-                mfg_index = MANUFACTURING_TYPES.index(current_mfg_type) + 1
-            
+            # Manufacturing Dropdown
             manufacturing_type = ""
-            if business_type == "ကုန်ထုတ်လုပ်ငန်း (Manufacturing)":
+            if business_type in ["ကုန်ထုတ်လုပ်ငန်း", "Manufacturing"]:
+                current_mfg_types = MANUFACTURING_TYPES_MY if lang == "my" else MANUFACTURING_TYPES_EN
+                mfg_index = 0
+                if current_mfg_type in current_mfg_types:
+                    mfg_index = current_mfg_types.index(current_mfg_type) + 1
+                    
                 manufacturing_type = st.selectbox(
-                    "ကုန်ထုတ်လုပ်မှု အမျိုးအစား" if st.session_state.get("language") == "my" else "Manufacturing Type",
-                    options=[""] + MANUFACTURING_TYPES,
+                    "ကုန်ထုတ်လုပ်မှု အမျိုးအစား" if lang == "my" else "Manufacturing Type",
+                    options=[""] + current_mfg_types,
                     index=mfg_index,
                     key="edit_manufacturing_type_select",
+                )
+            
+            # Trading Dropdown
+            trading_type = ""
+            if business_type in ["အရောင်းအဝယ်လုပ်ငန်း", "Trading"]:
+                current_trading_types = TRADING_TYPES_MY if lang == "my" else TRADING_TYPES_EN
+                trade_index = 0
+                if current_trading_type in current_trading_types:
+                    trade_index = current_trading_types.index(current_trading_type) + 1
+                    
+                trading_type = st.selectbox(
+                    "အရောင်းအဝယ် အမျိုးအစား" if lang == "my" else "Trading Type",
+                    options=[""] + current_trading_types,
+                    index=trade_index,
+                    key="edit_trading_type_select",
                 )
         
         with col2:
@@ -321,7 +413,7 @@ if st.session_state.editing_client_id is not None:
                 key="edit_email",
             )
             fiscal_year_end = st.text_input(
-                "ဘဏ္ဍာရေးနှစ် ကုန်ဆုံးရက်" if st.session_state.get("language") == "my" else "Fiscal Year End",
+                "ဘဏ္ဍာရေးနှစ် ကုန်ဆုံးရက်" if lang == "my" else "Fiscal Year End",
                 value=client.get("fiscal_year_end", "09-30") or "09-30",
                 key="edit_fiscal_year_end",
             )
@@ -337,16 +429,19 @@ if st.session_state.editing_client_id is not None:
         with col_a:
             if st.button(t('save'), use_container_width=True, type="primary", key="edit_save_btn"):
                 if not business_name or len(business_name.strip()) < 2:
-                    st.error("❌ လုပ်ငန်း အမည် ဖြည့်ပါ" if st.session_state.get("language") == "my" else "❌ Please enter Business Name")
+                    st.error("❌ လုပ်ငန်း အမည် ဖြည့်ပါ" if lang == "my" else "❌ Please enter Business Name")
                 else:
                     try:
                         final_business_type = business_type
                         
-                        if business_type == "အခြား (Others)" and custom_business_type:
+                        if business_type in ["အခြား", "Others"] and custom_business_type:
                             final_business_type = custom_business_type.strip()
                             
-                        if business_type == "ကုန်ထုတ်လုပ်ငန်း (Manufacturing)" and manufacturing_type:
+                        if business_type in ["ကုန်ထုတ်လုပ်ငန်း", "Manufacturing"] and manufacturing_type:
                             final_business_type = f"{business_type} - {manufacturing_type}"
+                            
+                        if business_type in ["အရောင်းအဝယ်လုပ်ငန်း", "Trading"] and trading_type:
+                            final_business_type = f"{business_type} - {trading_type}"
 
                         db.update_client(
                             st.session_state.editing_client_id,
@@ -357,7 +452,7 @@ if st.session_state.editing_client_id is not None:
                             address=clean_html(address.strip()),
                             fiscal_year_end=fiscal_year_end.strip() or "09-30",
                         )
-                        st.success("✓ ပြင်ဆင်ပြီးပါပြီ" if st.session_state.get("language") == "my" else "✓ Updated successfully")
+                        st.success("✓ ပြင်ဆင်ပြီးပါပြီ" if lang == "my" else "✓ Updated successfully")
                         st.session_state.editing_client_id = None
                         st.rerun()
                     except Exception as e:
