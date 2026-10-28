@@ -654,6 +654,7 @@ def _render_manufacturing_html(t: Dict[str, Any], lang: str) -> str:
     return html
 
 
+
 def _render_trading_pl_html(t: Dict[str, Any], lang: str, data: Dict[str, Any]) -> str:
     html = ""
     sr_counter = 1
@@ -726,21 +727,31 @@ def _render_trading_pl_html(t: Dict[str, Any], lang: str, data: Dict[str, Any]) 
         
     prod_cost = mfg_dm + mfg_dl + mfg_oh
 
-    # ⭐ Opening Stock
+    # ⭐ Opening Stock (မူရင်း + Custom)
     if show_cos.get("opening_stock_finished", True):
         for item in cost_custom.get("opening_stock", []):
             if item.get("label") and item.get("value", 0) > 0:
                 cost_of_prod_rows += _build_row_5(get_sr(), item["label"], format_number(item["value"]), "", "", indent=1)
-        cost_of_prod_rows += _build_row_5(get_sr(), get_pdf_text(lang, "opening_stock_finished"), "", format_number(cogs["opening_stock_finished"]["value"]), "")
+        
+        # မူရင်း Opening Stock ကို ယူပြီး Custom နဲ့ ပေါင်းမယ်
+        base_opening = parse_number(cogs["opening_stock_finished"]["value"])
+        if data.get("opening_stock_finished") is not None:
+            base_opening = parse_number(data["opening_stock_finished"])
+        
+        cost_of_prod_rows += _build_row_5(get_sr(), get_pdf_text(lang, "opening_stock_finished"), "", format_number(base_opening), "")
 
-    # ⭐ Purchases
+    # ⭐ Purchases (မူရင်း + Custom)
     if show_cos.get("purchases", True):
         for item in cost_custom.get("purchases", []):
             if item.get("label") and item.get("value", 0) > 0:
                 cost_of_prod_rows += _build_row_5(get_sr(), item["label"], format_number(item["value"]), "", "", indent=1)
         
-        purchases_total = sum(item.get("value", 0) for item in cost_custom.get("purchases", []))
-        cost_of_prod_rows += _build_row_5(get_sr(), get_pdf_text(lang, "add_purchases"), "", format_number(purchases_total), "")
+        # မူရင်း Purchases ကို ယူပြီး Custom နဲ့ ပေါင်းမယ်
+        base_purchases = parse_number(cogs["add_purchases"]["value"])
+        if data.get("add_purchases") is not None:
+            base_purchases = parse_number(data["add_purchases"])
+            
+        cost_of_prod_rows += _build_row_5(get_sr(), get_pdf_text(lang, "add_purchases"), "", format_number(base_purchases), "")
 
     if show_cos.get("carriage_inward", True):
         cost_of_prod_rows += _build_row_5(get_sr(), get_pdf_text(lang, "add_carriage_inward"), "", format_number(cogs["add_carriage_inward"]["value"]), "")
@@ -752,20 +763,20 @@ def _render_trading_pl_html(t: Dict[str, Any], lang: str, data: Dict[str, Any]) 
         if item.get("label") and item.get("value", 0) > 0:
             cost_of_prod_rows += _build_row_5(get_sr(), item["label"], "", format_number(item["value"]), "")
 
-    total_cogs_before_closing = prod_cost + cogs["opening_stock_finished"]["value"] + purchases_total + cogs["add_carriage_inward"]["value"] - cogs["less_purchase_return"]["value"]
-    for item in custom_data.get("cos", []):
-        total_cogs_before_closing += item.get("value", 0)
-
     html += cost_of_prod_rows
 
-    # ⭐ Closing Stock (ဒီမှာ အားလုံးကို html ထဲ တိုက်ရိုက်ထည့်မယ်)
+    # ⭐ Closing Stock (မူရင်း + Custom)
     if show_cos.get("closing_stock_finished", True):
         for item in cost_custom.get("closing_stock", []):
             if item.get("label") and item.get("value", 0) > 0:
                 html += _build_row_5(get_sr(), item["label"], f"({format_number(item['value'])})", "", "", indent=1)
         
-        closing_stock_total = sum(item.get("value", 0) for item in cost_custom.get("closing_stock", []))
-        html += _build_row_5(get_sr(), get_pdf_text(lang, "less_closing_stock"), "", f"({format_number(closing_stock_total)})", "")
+        # မူရင်း Closing Stock ကို ယူပြီး Custom နဲ့ ပေါင်းမယ်
+        base_closing = parse_number(cogs["less_closing_stock"]["value"])
+        if data.get("closing_stock_finished") is not None:
+            base_closing = parse_number(data["closing_stock_finished"])
+            
+        html += _build_row_5(get_sr(), get_pdf_text(lang, "less_closing_stock"), "", f"({format_number(base_closing)})", "")
 
     cogs_label = "ကုန်ရောင်း တန်ဖိုး (Cost of Sales)" if lang == "my" else "Cost of Sales"
     html += _build_row_5("", cogs_label, "", "", format_number(t["trading"]["cogs"]["cogs_total"]), css="cogs-row", is_bold=True)

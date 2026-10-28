@@ -597,6 +597,11 @@ with col2:
             pdf_data["opening_stock_finished"] = final_opening_stock
             pdf_data["add_purchases"] = final_purchases
             pdf_data["closing_stock_finished"] = final_closing_stock
+
+            # ⭐ ဒါလေး ထည့်ပြီး စမ်းကြည့်ပါ
+            # st.write("DEBUG: Opening =", pdf_data["opening_stock_finished"])
+            # st.write("DEBUG: Purchases =", pdf_data["add_purchases"])
+            # st.write("DEBUG: Closing =", pdf_data["closing_stock_finished"])
             
             # Custom Data တွေကိုလည်း ထည့်မယ်
             combined_custom = dict(st.session_state.custom_data)
