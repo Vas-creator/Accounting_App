@@ -14,11 +14,36 @@ from typing import Any
 import streamlit as st
 from st_supabase_connection import SupabaseConnection
 
+
 CLIENT_TABLE = "clients"
 STATEMENT_TABLES = {"manufacturing", "trading_pl", "balance_sheet", "cash_flow"}
 BACKUP_TABLES = [CLIENT_TABLE, "manufacturing", "trading_pl", "balance_sheet", "cash_flow"]
 
+def debug_supabase_secrets():
+    st.write("DEBUG: Secrets check started")
 
+    try:
+        st.write("Has connections:", "connections" in st.secrets)
+
+        if "connections" in st.secrets:
+            st.write(
+                "Has supabase:",
+                "supabase" in st.secrets["connections"]
+            )
+
+            if "supabase" in st.secrets["connections"]:
+                st.write(
+                    "Has URL:",
+                    bool(st.secrets["connections"]["supabase"].get("url"))
+                )
+                st.write(
+                    "Has key:",
+                    bool(st.secrets["connections"]["supabase"].get("key"))
+                )
+
+    except Exception as exc:
+        st.error(f"Secrets inspection failed: {type(exc).__name__}: {exc}")
+        
 def get_supabase():
     """Connect directly to Supabase using Streamlit secrets."""
     from supabase import create_client
