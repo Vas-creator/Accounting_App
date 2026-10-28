@@ -1,6 +1,8 @@
 # pages/1_Clients.py
 import streamlit as st
+from core.db import debug_supabase_secrets
 
+debug_supabase_secrets()
 st.write("DEBUG: Clients page loaded")
 import streamlit as st
 from core import db
