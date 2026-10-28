@@ -126,7 +126,8 @@ def get_all_clients() -> list:
         res = get_supabase().table(CLIENT_TABLE).select("*").order("name").execute()
         return res.data or []
     except Exception as exc:
-        print(f"Get all clients error: {exc}")
+        st.error("Supabase query failed")
+        st.code(f"{type(exc).__name__}: {exc}")
         return []
 
 
