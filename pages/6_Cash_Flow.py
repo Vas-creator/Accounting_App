@@ -53,9 +53,13 @@ if not client:
     st.stop()
 
 # ============================================================
-# SESSION STATE
+# SESSION STATE & TARGET PERIOD
 # ============================================================
 
+# ⭐ Client Detail ကနေ လာတဲ့ ကာလကို အရင်ယူမယ်
+target_period = st.session_state.get("target_period")
+
+# ⭐ ဖောက်သည်အသစ်ဖြစ်နေရင် ရှင်းမယ်
 if st.session_state.get("current_cf_client_id") != client_id:
     st.session_state.current_cf_client_id = client_id
     if "cf_data" in st.session_state:
@@ -65,6 +69,13 @@ if st.session_state.get("current_cf_client_id") != client_id:
     for k in list(st.session_state.keys()):
         if k.startswith("cf_"):
             del st.session_state[k]
+
+# ⭐ Target Period ရှိရင် အဲ့ဒါကို သတ်မှတ်မယ်
+if target_period:
+    st.session_state.cf_period = target_period
+    del st.session_state["target_period"] # သုံးပြီးရင် ဖျက်မယ်
+elif "cf_period" not in st.session_state:
+    st.session_state.cf_period = str(date.today()) # မရှိရင် ဒီနေ့ရက်စွဲ သတ်မှတ်မယ်
 
 # ============================================================
 # HISTORY

@@ -1,6 +1,6 @@
 # pages/2_Client_Detail.py
 """
-Client Detail — ဖောက်သည် အသေးစိတ် + ရှင်းတမ်း ၄ ခု Overview
+Client Detail — ဖောက်သည် အသေးစိတ် + ရှင်းတမ်း ၄ ခု Overview (Multi-Year Support)
 """
 import streamlit as st
 from core import db
@@ -111,7 +111,6 @@ with col_back:
     if st.button("← " + ("ပြန်" if st.session_state.get("language", "my") == "my" else "Back"), use_container_width=True):
         st.switch_page("pages/1_Clients.py")
 
-# ⭐ Header မှာ Client Name (သို့) Business Name ပြမယ်
 st.markdown(
     f"""
     <div style="
@@ -190,13 +189,64 @@ with col4:
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ============================================================
-# STATEMENTS OVERVIEW
+# MULTI-YEAR PERIOD SELECTION
 # ============================================================
 
 st.markdown(
     f"""
     <h2 style="color: #1f4788; font-size: 1.6rem; margin-top: 1rem;">
-        {t('all_statements')}
+        📅 {'ကာလ ရွေးချယ်ပါ' if st.session_state.get('language', 'my') == 'my' else 'Select Period'}
+    </h2>
+    """,
+    unsafe_allow_html=True,
+)
+
+# ဖောက်သည်ရဲ့ သိမ်းထားတဲ့ ကာလတွေကို ရှာမယ်
+try:
+    history = db.get_statement_history(client_id, "trading_pl")
+    history_periods = sorted(list(set([h["period_end"] for h in history if h.get("period_end")])), reverse=True)
+except Exception:
+    history_periods = []
+
+# Session State မှာ ရွေးထားတဲ့ ကာလကို သိမ်းမယ်
+if "selected_detail_period" not in st.session_state:
+    st.session_state.selected_detail_period = history_periods[0] if history_periods else ""
+
+# ကာလရွေးတဲ့ Dropdown
+if history_periods:
+    col_period, col_add = st.columns([2, 1])
+    with col_period:
+        selected_period = st.selectbox(
+            "ကာလ (Period)",
+            options=history_periods,
+            index=history_periods.index(st.session_state.selected_detail_period) if st.session_state.selected_detail_period in history_periods else 0,
+            key="detail_period_select"
+        )
+        st.session_state.selected_detail_period = selected_period
+    with col_add:
+        st.markdown("<br>", unsafe_allow_html=True) # Alignment အတွက်
+        if st.button(f"➕ {'ကာလအသစ် ထပ်ထည့်ရန်' if st.session_state.get('language', 'my') == 'my' else 'Add New Period'}", use_container_width=True):
+            # ကာလအသစ်ထည့်ဖို့ Trading PL ကို ပို့မယ်
+            st.session_state["selected_client_id"] = client_id
+            st.session_state["selected_client_name"] = client_display_name
+            st.switch_page("pages/4_Trading_PL.py")
+else:
+    st.info("သိမ်းထားသော စာရင်း မရှိသေးပါ။ အောက်က ခလုတ်ကို နှိပ်ပြီး စတင်ပါ။" if st.session_state.get("language") == "my" else "No statements yet. Click below to start.")
+    if st.button(f"➕ {'စာရင်းအသစ် စတင်ရန်' if st.session_state.get('language', 'my') == 'my' else 'Start New Statement'}", type="primary"):
+        st.session_state["selected_client_id"] = client_id
+        st.session_state["selected_client_name"] = client_display_name
+        st.switch_page("pages/4_Trading_PL.py")
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# ============================================================
+# STATEMENTS OVERVIEW (ရွေးထားတဲ့ ကာလအလိုက်)
+# ============================================================
+
+st.markdown(
+    f"""
+    <h2 style="color: #1f4788; font-size: 1.6rem; margin-top: 1rem;">
+        {t('all_statements')} — {st.session_state.selected_detail_period}
     </h2>
     """,
     unsafe_allow_html=True,
@@ -234,8 +284,9 @@ cols = st.columns(4)
 for idx, stmt in enumerate(statements_config):
     with cols[idx]:
         try:
-            existing = db.get_statement(client_id, stmt["key"])
-            has_data = existing is not None
+            # ⭐ ရွေးထားတဲ့ ကာလအတွက် စာရင်းရှိမရှိ စစ်မယ်
+            existing = db.get_statement(client_id, stmt["key"], period_end=st.session_state.selected_detail_period)
+            has_data = existing is not None and existing.get("data") is not None
         except Exception:
             has_data = False
 
@@ -243,7 +294,6 @@ for idx, stmt in enumerate(statements_config):
         status_text = t("has_data") if has_data else t("no_data")
         status_color = "#2e7d32" if has_data else "#999"
         
-        # Statement Title
         title_key = stmt["key"]
         if title_key == "manufacturing":
             title = t("manufacturing")
@@ -285,6 +335,8 @@ for idx, stmt in enumerate(statements_config):
         ):
             st.session_state["selected_client_id"] = client_id
             st.session_state["selected_client_name"] = client_display_name
+            # ⭐ ရွေးထားတဲ့ ကာလကို သက်ဆိုင်ရာ စာမျက်နှာတွေဆီ ပို့ပေးမယ်
+            st.session_state["target_period"] = st.session_state.selected_detail_period
             st.switch_page(stmt["page"])
 
 st.markdown("<br>", unsafe_allow_html=True)
@@ -312,7 +364,7 @@ st.markdown(
         margin-bottom: 1rem;
     ">
         <p style="margin: 0; color: #e65100; font-size: 1rem;">
-            💡 <b>{t('export_pdf')}</b> — {'ရှင်းတမ်း ၄ ခုလုံး ဖြည့်ပြီးမှ ဤနေရာမှ ထုတ်ယူပါ' if st.session_state.get('language', 'my') == 'my' else 'Fill all 4 statements before exporting PDF'}
+            💡 <b>{t('export_pdf')}</b> — {'ရွေးထားတဲ့ ကာလအတွက် ရှင်းတမ်း ၄ ခုလုံး ဖြည့်ပြီးမှ ဤနေရာမှ ထုတ်ယူပါ' if st.session_state.get('language', 'my') == 'my' else 'Fill all 4 statements for the selected period before exporting PDF'}
         </p>
     </div>
     """,
@@ -325,6 +377,7 @@ with col1:
     if st.button(f"📄 {t('export_pdf')}", use_container_width=True, type="primary"):
         st.session_state["selected_client_id"] = client_id
         st.session_state["selected_client_name"] = client_display_name
+        st.session_state["target_period"] = st.session_state.selected_detail_period
         st.switch_page("pages/7_Export.py")
 
 with col2:
@@ -413,42 +466,37 @@ import json
 st.divider()
 st.markdown("### 🤖 AI စာရင်းအကူအညီ (Ask AI)")
 
-# ⭐ Chat History ကို Session State မှာ သိမ်းမယ် (ဖောက်သည်တစ်ယောက်ချင်းစီအတွက်)
 chat_key = f"ai_chat_history_{client_id}"
 if chat_key not in st.session_state:
     st.session_state[chat_key] = []
 
-# ဖောက်သည်ရဲ့ ဒေတာတွေကို စုစည်းမယ်
 client_context = f"ဖောက်သည်အမည်: {client_display_name}\nလုပ်ငန်းအမျိုးအစား: {client.get('business_type', '')}\n"
 
 try:
-    tpl_data = db.get_statement(client_id, "trading_pl")
+    # ⭐ ရွေးထားတဲ့ ကာလအတွက် Trading PL ကို ယူမယ်
+    tpl_data = db.get_statement(client_id, "trading_pl", period_end=st.session_state.selected_detail_period)
     if tpl_data and tpl_data.get("data"):
         tpl_info = json.loads(tpl_data["data"])
         client_context += f"""
-        နောက်ဆုံး အရောင်းအဝယ်စာရင်း:
-        - အရောင်း: {format_number(tpl_info.get('_total_revenue', 0))}
-        - ကုန်ကျစရိတ်: {format_number(tpl_info.get('_total_cos', 0))}
-        - အမြတ်: {format_number(tpl_info.get('_gross_profit', 0))}
-        - အသုံးစရိတ်: {format_number(tpl_info.get('_total_expenses', 0))}
-        - အသားတင်အမြတ်: {format_number(tpl_info.get('_net_profit', 0))}
+        ကာလ: {st.session_state.selected_detail_period}
+        အရောင်း: {format_number(tpl_info.get('_total_revenue', 0))}
+        ကုန်ကျစရိတ်: {format_number(tpl_info.get('_total_cos', 0))}
+        အမြတ်: {format_number(tpl_info.get('_gross_profit', 0))}
+        အသုံးစရိတ်: {format_number(tpl_info.get('_total_expenses', 0))}
+        အသားတင်အမြတ်: {format_number(tpl_info.get('_net_profit', 0))}
         """
 except Exception:
     pass
 
-# Chat History ပြမယ်
 for message in st.session_state[chat_key]:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# အသုံးပြုသူ ရိုက်ထည့်တဲ့ နေရာ
 if prompt := st.chat_input("ဒီဖောက်သည်ရဲ့ စာရင်းအခြေအနေကို မေးပါ..."):
-    # User ရဲ့ စာသားကို သိမ်းမယ်
     st.session_state[chat_key].append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # AI ဆီက အဖြေယူမယ်
     with st.chat_message("assistant"):
         with st.spinner("AI စဉ်းစားနေသည်..."):
             response = get_ai_response(prompt, client_context)

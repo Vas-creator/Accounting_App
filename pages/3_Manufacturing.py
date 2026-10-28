@@ -58,9 +58,13 @@ if not client:
 client_display_name = client.get("name") if client.get("name") else client.get("business_name", "Unknown")
 
 # ============================================================
-# SESSION STATE (ဖောက်သည်ပြောင်းရင် ရှင်းမယ်)
+# SESSION STATE & TARGET PERIOD (ဖောက်သည်ပြောင်းရင် ရှင်းမယ်)
 # ============================================================
 
+# ⭐ Client Detail ကနေ လာတဲ့ ကာလကို အရင်ယူမယ်
+target_period = st.session_state.get("target_period")
+
+# ⭐ ဖောက်သည်အသစ်ဖြစ်နေရင် ရှင်းမယ်
 if st.session_state.get("current_mfg_client_id") != client_id:
     st.session_state.current_mfg_client_id = client_id
     if "mfg_data" in st.session_state:
@@ -73,6 +77,13 @@ if st.session_state.get("current_mfg_client_id") != client_id:
         if k.startswith("mfg_show_") or k.startswith("mfg_"):
             if k != "mfg_period_input":
                 del st.session_state[k]
+
+# ⭐ Target Period ရှိရင် အဲ့ဒါကို သတ်မှတ်မယ်
+if target_period:
+    st.session_state.mfg_period = target_period
+    del st.session_state["target_period"] # သုံးပြီးရင် ဖျက်မယ်
+elif "mfg_period" not in st.session_state:
+    st.session_state.mfg_period = str(date.today()) # မရှိရင် ဒီနေ့ရက်စွဲ သတ်မှတ်မယ်
 
 # ============================================================
 # HISTORY: ကာလအလိုက် စာရင်းဟောင်းများ ရယူခြင်း

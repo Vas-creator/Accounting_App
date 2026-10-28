@@ -69,13 +69,25 @@ def safe_json_loads(data):
     return {}
 
 # ============================================================
-# LOAD ALL STATEMENTS
+# LOAD ALL STATEMENTS (Specific Period)
 # ============================================================
+
+# ⭐ Client Detail ကနေ လာတဲ့ ကာလကို အရင်ယူမယ်
+target_period = st.session_state.get("target_period")
 
 if st.session_state.get("current_export_client_id") != client_id:
     st.session_state.current_export_client_id = client_id
     if "show_individual" in st.session_state:
         del st.session_state["show_individual"]
+
+# ⭐ Target Period ရှိရင် အဲ့ဒါကို သတ်မှတ်မယ်၊ မရှိရင် ဒီနေ့ရက်စွဲ သုံးမယ်
+if target_period:
+    export_period = target_period
+    del st.session_state["target_period"] # သုံးပြီးရင် ဖျက်မယ်
+else:
+    export_period = st.session_state.get("current_export_period", str(date.today()))
+
+st.session_state.current_export_period = export_period
 
 statements = {
     "manufacturing": {"icon": "🏭", "data": None, "period": "", "label_my": "ကုန်ထုတ်လုပ်မှု စာရင်း", "label_en": "Manufacturing Account"},
@@ -86,7 +98,8 @@ statements = {
 
 for key in statements.keys():
     try:
-        existing = db.get_statement(client_id, key)
+        # ⭐ ရွေးထားတဲ့ ကာလအတွက် စာရင်းကို ဆွဲထုတ်မယ်
+        existing = db.get_statement(client_id, key, period_end=export_period)
         if existing and existing.get("data"):
             statements[key]["data"] = safe_json_loads(existing["data"])
             statements[key]["period"] = existing.get("period_end", "") or existing.get("as_at_date", "")
