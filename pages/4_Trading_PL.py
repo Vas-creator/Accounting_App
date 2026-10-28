@@ -592,7 +592,12 @@ with col2:
         try:
             pdf_data = dict(st.session_state.tpl_data)
             
-            # ⭐ Custom Data နှစ်မျိုးလုံးကို ပေါင်းပြီး ပို့မယ်
+            # ⭐ UI မှာ ဖြည့်ထားတဲ့ တန်ဖိုးတွေကို pdf_data ထဲ ထည့်မယ်
+            pdf_data["opening_stock_finished"] = cs_opening
+            pdf_data["add_purchases"] = final_purchases
+            pdf_data["closing_stock_finished"] = final_closing_stock
+            
+            # ⭐ Custom Data တွေကိုလည်း ထည့်မယ်
             combined_custom = dict(st.session_state.custom_data)
             combined_custom.update(st.session_state.tpl_cost_custom)
             pdf_data["custom_data"] = combined_custom
@@ -611,11 +616,10 @@ with col2:
             # ကုန်ပစ္စည်းဝယ်ယူမှု၊ သယ်ယူပို့ဆောင်ခ တွေကို ထည့်မယ်
             pdf_data["purchases"] = cs_purchases
             pdf_data["carriage_inward"] = cs_carriage
-            pdf_data["add_purchases"] = final_purchases
             pdf_data["add_carriage_inward"] = cs_carriage
             pdf_data["add_manufacturing_cost"] = mfg_cost_input
-            pdf_data["closing_stock_finished"] = final_closing_stock
             
+            # Total တွေကို ထည့်မယ်
             pdf_data["_total_revenue"] = total_revenue
             pdf_data["_total_cos"] = total_cos
             pdf_data["_gross_profit"] = gross_profit
