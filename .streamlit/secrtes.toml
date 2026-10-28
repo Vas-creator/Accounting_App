@@ -1,2 +1,3 @@
-SUPABASE_URL = "https://oicutagoajugirdjoats.supabase.co"
-SUPABASE_KEY = "sb_publishable_KEH3kxBvss2YZsJv6Ef5SA_uyfgmWyT"
+[connections.supabase]
+url = "https://oicutagoajugirdjoats.supabase.co"
+key = "sb_publishable_KEH3kxBvss2YZsJv6Ef5SA_uyfgmWyT"

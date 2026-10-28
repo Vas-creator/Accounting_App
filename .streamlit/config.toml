@@ -15,4 +15,3 @@ gatherUsageStats = false
 [runner]
 fastReruns = true
 
-.streamlit/secrets.toml
