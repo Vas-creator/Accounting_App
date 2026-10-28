@@ -1,8 +1,5 @@
 # pages/1_Clients.py
 import streamlit as st
-
-st.write("DEBUG: Clients page loaded")
-import streamlit as st
 from core import db
 from core.utils import format_date_mm, info_box, clean_html
 from core.translations import t
