@@ -377,33 +377,44 @@ def calculate_trading_pl(data: Dict[str, Any]) -> Dict[str, Any]:
 
     cogs = t["trading"]["cogs"]["items"]
     
-    # ⭐ Opening Stock - Custom ပေါင်းခြင်းကိုပဲ ယူမယ်
+    # ⭐ Opening Stock (မူရင်း + Custom)
     opening_custom_total = 0
     for item in custom_data.get("opening_stock", []):
         if item.get("value"):
             opening_custom_total += parse_number(item["value"])
-    t["trading"]["cogs"]["items"]["opening_stock_finished"]["value"] = opening_custom_total
+    
+    # မူရင်း Opening Stock ကို ယူပြီး Custom နဲ့ ပေါင်းမယ်
+    base_opening = parse_number(cogs["opening_stock_finished"]["value"])
+    if data.get("opening_stock_finished") is not None:
+        base_opening = parse_number(data["opening_stock_finished"])
+    
+    t["trading"]["cogs"]["items"]["opening_stock_finished"]["value"] = base_opening + opening_custom_total
 
-    # ⭐ Purchases - Custom ပေါင်းခြင်းကိုပဲ ယူမယ် (မူရင်းကို လုံးဝမယူဘူး)
+    # ⭐ Purchases (မူရင်း + Custom)
     purchases_custom_total = 0
     for item in custom_data.get("purchases", []):
         if item.get("value"):
             purchases_custom_total += parse_number(item["value"])
-    t["trading"]["cogs"]["items"]["add_purchases"]["value"] = purchases_custom_total
+            
+    base_purchases = parse_number(cogs["add_purchases"]["value"])
+    if data.get("add_purchases") is not None:
+        base_purchases = parse_number(data["add_purchases"])
+        
+    t["trading"]["cogs"]["items"]["add_purchases"]["value"] = base_purchases + purchases_custom_total
 
-    # ⭐ Closing Stock - Custom ပေါင်းခြင်းကိုပဲ ယူမယ်
+    # ⭐ Closing Stock (မူရင်း + Custom)
     closing_custom_total = 0
     for item in custom_data.get("closing_stock", []):
         if item.get("value"):
             closing_custom_total += parse_number(item["value"])
-    t["trading"]["cogs"]["items"]["less_closing_stock"]["value"] = closing_custom_total
-
-    closing_stock = closing_custom_total
-    if data.get("closing_stock") is not None:
-        closing_stock = parse_number(data["closing_stock"])
-    elif data.get("closing_stock_finished") is not None:
-        closing_stock = parse_number(data["closing_stock_finished"])
+            
+    base_closing = parse_number(cogs["less_closing_stock"]["value"])
+    if data.get("closing_stock_finished") is not None:
+        base_closing = parse_number(data["closing_stock_finished"])
         
+    t["trading"]["cogs"]["items"]["less_closing_stock"]["value"] = base_closing + closing_custom_total
+
+    # စုစုပေါင်း COGS တွက်မယ်
     cogs_total = (
         t["trading"]["cogs"]["items"]["opening_stock_finished"]["value"]
         + t["trading"]["cogs"]["items"]["add_purchases"]["value"]
@@ -411,7 +422,7 @@ def calculate_trading_pl(data: Dict[str, Any]) -> Dict[str, Any]:
         + parse_number(cogs["add_carriage_inward"]["value"])
         + parse_number(cogs["add_duty"]["value"])
         - parse_number(cogs["less_purchase_return"]["value"])
-        - closing_stock
+        - t["trading"]["cogs"]["items"]["less_closing_stock"]["value"]
     )
 
     for item in custom_data.get("cos", []):
@@ -422,7 +433,6 @@ def calculate_trading_pl(data: Dict[str, Any]) -> Dict[str, Any]:
         cogs_total = parse_number(data["_total_cos"])
 
     t["trading"]["cogs"]["cogs_total"] = cogs_total
-    t["trading"]["cogs"]["items"]["less_closing_stock"]["value"] = closing_stock
 
     gross_profit = net_sales - cogs_total
     if data.get("_gross_profit") is not None:

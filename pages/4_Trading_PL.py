@@ -590,9 +590,10 @@ with col2:
     if st.button("📄 PDF", use_container_width=True):
         play_click_sound()
         try:
+            # ၁။ UI မှာ ဖြည့်ထားတဲ့ တန်ဖိုးတွေကို အရင်ယူမယ်
             pdf_data = dict(st.session_state.tpl_data)
             
-            # ⭐ UI မှာ ဖြည့်ထားတဲ့ တန်ဖိုးတွေကို pdf_data ထဲ ထည့်မယ်
+            # ⭐ ဒီနေရာမှာ UI က တန်ဖိုးတွေကို pdf_data ထဲ တိုက်ရိုက်ထည့်မယ်
             pdf_data["opening_stock_finished"] = cs_opening
             pdf_data["add_purchases"] = final_purchases
             pdf_data["closing_stock_finished"] = final_closing_stock
@@ -601,8 +602,6 @@ with col2:
             combined_custom = dict(st.session_state.custom_data)
             combined_custom.update(st.session_state.tpl_cost_custom)
             pdf_data["custom_data"] = combined_custom
-            
-            # ... ကျန်တဲ့ ကုဒ်တွေ ...
             
             # Checkbox အနေအထားတွေ ထည့်မယ်
             pdf_data["_show_revenue"] = st.session_state.show_revenue
@@ -627,7 +626,8 @@ with col2:
             pdf_data["_gross_profit"] = gross_profit
             pdf_data["_total_expenses"] = total_expenses
             pdf_data["_net_profit"] = net_profit
-            
+
+            # ၂။ PDF ကို ဆောက်မယ်
             pdf_bytes = generate_pdf(
                 statement_type="trading_pl",
                 client_name=client["name"],
