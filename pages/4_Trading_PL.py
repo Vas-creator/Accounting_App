@@ -593,8 +593,8 @@ with col2:
             # ၁။ UI မှာ ဖြည့်ထားတဲ့ တန်ဖိုးတွေကို အရင်ယူမယ်
             pdf_data = dict(st.session_state.tpl_data)
             
-            # ⭐ ဒီနေရာမှာ UI က တန်ဖိုးတွေကို pdf_data ထဲ တိုက်ရိုက်ထည့်မယ်
-            pdf_data["opening_stock_finished"] = cs_opening
+            # ⭐ UI မှာ ဖြည့်ထားတဲ့ တန်ဖိုးတွေကို pdf_data ထဲ တိုက်ရိုက်ထည့်မယ်
+            pdf_data["opening_stock_finished"] = final_opening_stock
             pdf_data["add_purchases"] = final_purchases
             pdf_data["closing_stock_finished"] = final_closing_stock
             
@@ -648,7 +648,7 @@ with col2:
             )
         except Exception as e:
             st.error(f"❌ PDF Error: {e}")
-            
+
 with col3:
     if st.button("🔄 Reset", use_container_width=True):
         play_click_sound()
