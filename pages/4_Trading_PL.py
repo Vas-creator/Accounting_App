@@ -597,10 +597,12 @@ with col2:
             pdf_data["add_purchases"] = final_purchases
             pdf_data["closing_stock_finished"] = final_closing_stock
             
-            # ⭐ Custom Data တွေကိုလည်း ထည့်မယ်
+            # Custom Data တွေကိုလည်း ထည့်မယ်
             combined_custom = dict(st.session_state.custom_data)
             combined_custom.update(st.session_state.tpl_cost_custom)
             pdf_data["custom_data"] = combined_custom
+            
+            # ... ကျန်တဲ့ ကုဒ်တွေ ...
             
             # Checkbox အနေအထားတွေ ထည့်မယ်
             pdf_data["_show_revenue"] = st.session_state.show_revenue

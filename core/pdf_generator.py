@@ -752,7 +752,7 @@ def _render_trading_pl_html(t: Dict[str, Any], lang: str, data: Dict[str, Any]) 
 
     html += cost_of_prod_rows
 
-    # ⭐ Closing Stock (ဒီနေရာမှာ cost_of_prod_rows မသုံးဘဲ တိုက်ရိုက် html ထဲကို ထည့်မယ်)
+    # ⭐ Closing Stock (ဒီမှာ အားလုံးကို html ထဲ တိုက်ရိုက်ထည့်မယ်)
     if show_cos.get("closing_stock_finished", True):
         for item in cost_custom.get("closing_stock", []):
             if item.get("label") and item.get("value", 0) > 0:
