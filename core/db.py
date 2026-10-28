@@ -121,10 +121,23 @@ def create_client(name: str, business_name: str = "", business_type: str = "",
     return int(res.data[0]["id"])
 
 
-def get_all_clients() -> list:
+def get_all_clients():
     try:
-        res = get_supabase().table(CLIENT_TABLE).select("*").order("name").execute()
-        return res.data or []
+        conn = get_supabase()
+
+        res = (
+            conn.table(CLIENT_TABLE)
+            .select("*")
+            .order("name")
+            .execute()
+        )
+
+        rows = res.data or []
+
+        st.info(f"DEBUG: Supabase returned {len(rows)} client rows")
+
+        return rows
+
     except Exception as exc:
         st.error("Supabase query failed")
         st.code(f"{type(exc).__name__}: {exc}")
