@@ -20,39 +20,25 @@ BACKUP_TABLES = [CLIENT_TABLE, "manufacturing", "trading_pl", "balance_sheet", "
 
 
 def get_supabase():
-    """Get the configured Supabase connection; credentials stay in Streamlit secrets."""
-    connection_error = None
-    try:
-        conn = st.connection("supabase", type=SupabaseConnection)
-        conn.table(CLIENT_TABLE).select("id").limit(1).execute()
-        return conn
-    except Exception as exc:
-        connection_error = exc
+    """Connect directly to Supabase using Streamlit secrets."""
+    from supabase import create_client
 
     try:
-        from supabase import create_client
-        url = key = None
+        url = st.secrets["connections"]["supabase"]["url"]
+        key = st.secrets["connections"]["supabase"]["key"]
+    except Exception:
         try:
-            url = st.secrets["connections"]["supabase"]["url"]
-            key = st.secrets["connections"]["supabase"]["key"]
-        except Exception:
-            pass
-        if not url or not key:
-            try:
-                url = st.secrets["SUPABASE_URL"]
-                key = st.secrets["SUPABASE_KEY"]
-            except Exception:
-                pass
-        if not url or not key:
+            url = st.secrets["SUPABASE_URL"]
+            key = st.secrets["SUPABASE_KEY"]
+        except Exception as exc:
             raise RuntimeError(
-                "Supabase credentials are missing. Configure the 'supabase' "
-                "Streamlit connection or SUPABASE_URL and SUPABASE_KEY secrets."
-            )
-        return create_client(url, key)
-    except Exception as fallback_error:
-        raise RuntimeError(
-            "Could not connect to Supabase. Check Streamlit secrets and connection settings."
-        ) from (fallback_error or connection_error)
+                "Supabase URL or key is missing from Streamlit secrets."
+            ) from exc
+
+    if not url or not key:
+        raise RuntimeError("Supabase URL or key is empty.")
+
+    return create_client(url, key)
 
 
 def init_db() -> None:
