@@ -1,318 +1,633 @@
-"""Database helpers for the Accounting App.
 
-Statement identity: (client_id, statement_type, period_end).
-Same period updates that period; a different period creates a new history row.
-Backup restore is non-destructive and never clears existing tables.
-"""
-from __future__ import annotations
+# core/db.py
 
-import json
 import os
-from datetime import datetime
-from typing import Any
-
+import time
 import streamlit as st
-from st_supabase_connection import SupabaseConnection
+from dotenv import load_dotenv
+from supabase import create_client
+from pathlib import Path
+from supabase import create_client as supabase_create_client
+import json
+from datetime import datetime, date
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(PROJECT_ROOT / ".env")
 
 
-CLIENT_TABLE = "clients"
-STATEMENT_TABLES = {"manufacturing", "trading_pl", "balance_sheet", "cash_flow"}
-BACKUP_TABLES = [CLIENT_TABLE, "manufacturing", "trading_pl", "balance_sheet", "cash_flow"]
+STATEMENT_TABLES = {
+    "manufacturing",
+    "trading_pl",
+    "balance_sheet",
+    "cash_flow",
+}
 
-       
+BACKUP_TABLES = [
+    "clients",
+    "manufacturing",
+    "trading_pl",
+    "balance_sheet",
+    "cash_flow",
+]
+
+
+load_dotenv()
+
+url = os.getenv("SUPABASE_URL")
+key = os.getenv("SUPABASE_KEY")
+
+if not url or not key:
+    raise ValueError("Supabase credentials are missing")
+
+client = create_client(url, key)
+print("Supabase client created successfully")
+
+# ============================================================
+# SUPABASE CONNECTION
+# ============================================================
+
+@st.cache_resource
 def get_supabase():
-    """Connect directly to Supabase using Streamlit secrets."""
-    from supabase import create_client
+    """Connect to Supabase using Streamlit secrets or environment variables."""
 
+    url = None
+    key = None
+
+    # Option 1: Streamlit Secrets under [connections.supabase]
     try:
-        url = st.secrets["connections"]["supabase"]["url"]
-        key = st.secrets["connections"]["supabase"]["key"]
+        config = st.secrets.get("connections", {}).get("supabase", {})
+        url = config.get("url") or config.get("SUPABASE_URL")
+        key = config.get("key") or config.get("SUPABASE_KEY")
     except Exception:
+        pass
+
+    # Option 2: Top-level Streamlit Secrets
+    if not url or not key:
         try:
-            url = st.secrets["SUPABASE_URL"]
-            key = st.secrets["SUPABASE_KEY"]
-        except Exception as exc:
-            raise RuntimeError(
-                "Supabase URL or key is missing from Streamlit secrets."
-            ) from exc
+            url = url or st.secrets.get("SUPABASE_URL")
+            key = key or st.secrets.get("SUPABASE_KEY")
+        except Exception:
+            pass
+
+    # Option 3: Environment variables
+    url = url or os.getenv("SUPABASE_URL")
+    key = key or os.getenv("SUPABASE_KEY")
 
     if not url or not key:
-        raise RuntimeError("Supabase URL or key is empty.")
+        try:
+            top_level_keys = list(st.secrets.keys())
+            print("Secrets top-level keys:", top_level_keys)
 
-    return create_client(url, key)
+            if "connections" in st.secrets:
+                connections = st.secrets["connections"]
+                print("Connection names:", list(connections.keys()))
 
+                if "supabase" in connections:
+                    supabase_config = connections["supabase"]
+                    print("Supabase config keys:", list(supabase_config.keys()))
+            else:
+                print("No 'connections' section found in st.secrets")
 
-def init_db() -> None:
-    """The schema is managed in Supabase; no tables are created here."""
+        except Exception as e:
+            print("Secrets diagnostic error:", type(e).__name__, str(e))
+
+        raise RuntimeError(
+            f"Supabase configuration missing: "
+            f"url_found={bool(url)}, key_found={bool(key)}"
+        )
+    
+
+    start = time.time()
+    client = supabase_create_client(url, key)
+
+    return client
+
+def init_db():
+    # Supabase schema is managed outside this application.
     return None
 
 
-def _validate_statement_table(statement_type: str) -> str:
-    if statement_type not in STATEMENT_TABLES:
-        raise ValueError(f"Unsupported statement type: {statement_type!r}")
-    return statement_type
-
-
-def _decode_json(value: Any, default: Any):
-    if value is None or value == "":
-        return default
-    return json.loads(value) if isinstance(value, str) else value
-
-
-def _period_string(period_end: Any = None, as_at_date: Any = None) -> str:
-    value = period_end or as_at_date
-    return str(value).strip() if value is not None else ""
-
-
-# ---------------------------- Dashboard ----------------------------
 def get_dashboard_stats() -> dict:
-    try:
-        conn = get_supabase()
-        clients_res = conn.table(CLIENT_TABLE).select("id", count="exact").execute()
-        total_clients = int(clients_res.count or 0)
-        total_statements = 0
-        for table in sorted(STATEMENT_TABLES):
-            try:
-                res = conn.table(table).select("id", count="exact").execute()
-                total_statements += int(res.count or 0)
-            except Exception as exc:
-                print(f"Statement count error for {table}: {exc}")
-        latest_update = "—"
-        try:
-            res = (conn.table(CLIENT_TABLE).select("created_at")
-                   .order("created_at", desc=True).limit(1).execute())
-            if res.data:
-                latest = res.data[0].get("created_at")
-                latest_update = str(latest)[:10] if latest else "—"
-        except Exception as exc:
-            print(f"Latest update lookup error: {exc}")
-        return {"total_clients": total_clients,
-                "total_statements": total_statements,
-                "latest_update": latest_update}
-    except Exception as exc:
-        print(f"Dashboard stats error: {exc}")
-        return {"total_clients": 0, "total_statements": 0, "latest_update": "—"}
-
-
-def get_recent_clients(limit: int = 5) -> list:
-    try:
-        conn = get_supabase()
-        res = (conn.table(CLIENT_TABLE).select("*")
-               .order("created_at", desc=True).limit(max(1, int(limit))).execute())
-        return res.data or []
-    except Exception as exc:
-        print(f"Recent clients error: {exc}")
-        return []
-
-
-# ---------------------------- Client CRUD ----------------------------
-def create_client(name: str, business_name: str = "", business_type: str = "",
-                  email: str = "", address: str = "", fiscal_year_end: str = "09-30",
-                  **kwargs) -> int:
-    if not str(name).strip():
-        raise ValueError("Client name is required.")
-    payload = {
-        "name": str(name).strip(), "business_name": business_name or "",
-        "business_type": business_type or "", "email": email or "",
-        "address": address or "", "fiscal_year_end": fiscal_year_end or "09-30",
+    """Dashboard အတွက် client နှင့် statement အရေအတွက်များ ရယူခြင်း။"""
+    default_stats = {
+        "total_clients": 0,
+        "total_statements": 0,
+        "latest_update": "—",
     }
-    res = get_supabase().table(CLIENT_TABLE).insert(payload).execute()
-    if not res.data:
-        raise RuntimeError("Supabase did not return the newly created client.")
-    return int(res.data[0]["id"])
 
-
-def get_all_clients():
     try:
         conn = get_supabase()
 
-        res = (
-            conn.table(CLIENT_TABLE)
-            .select("*")
-            .order("name")
+        # 1. Total clients
+        clients_res = (
+            conn.table("clients")
+            .select("id", count="exact")
+            .execute()
+        )
+        total_clients = clients_res.count or 0
+
+        # 2. Client တစ်ဦးချင်းစီမှာ statement type တစ်မျိုးစီ
+        #    အနည်းဆုံးတစ်ခု ရှိ/မရှိ စစ်မယ်။
+        total_statements = 0
+
+        clients = (
+            conn.table("clients")
+            .select("id")
+            .execute()
+        ).data or []
+
+        statement_tables = [
+            "manufacturing",
+            "trading_pl",
+            "balance_sheet",
+            "cash_flow",
+        ]
+
+        for client in clients:
+            client_id = client["id"]
+
+            for table in statement_tables:
+                result = (
+                    conn.table(table)
+                    .select("id")
+                    .eq("client_id", client_id)
+                    .limit(1)
+                    .execute()
+                )
+
+                if result.data:
+                    total_statements += 1
+
+        # 3. နောက်ဆုံးဖန်တီးထားသော client ရက်စွဲ
+        latest_res = (
+            conn.table("clients")
+            .select("created_at")
+            .order("created_at", desc=True)
+            .limit(1)
             .execute()
         )
 
-        rows = res.data or []
+        latest_update = "—"
+        if latest_res.data:
+            created_at = latest_res.data[0].get("created_at")
+            if created_at:
+                latest_update = str(created_at)[:10]
 
-        st.info(f"DEBUG: Supabase returned {len(rows)} client rows")
+        return {
+            "total_clients": total_clients,
+            "total_statements": total_statements,
+            "latest_update": latest_update,
+        }
 
-        return rows
-
-    except Exception as exc:
-        st.error("Supabase query failed")
-        st.code(f"{type(exc).__name__}: {exc}")
-        return []
+    except Exception as e:
+        print(f"Dashboard stats error: {e}")
+        return default_stats
 
 
-def get_client(client_id: int):
-    try:
-        res = get_supabase().table(CLIENT_TABLE).select("*").eq("id", client_id).limit(1).execute()
-        return res.data[0] if res.data else None
-    except Exception as exc:
-        print(f"Get client error: {exc}")
+
+# ============================================================
+# INTERNAL HELPERS
+# ============================================================
+
+def _validate_statement_type(statement_type):
+    if statement_type not in STATEMENT_TABLES:
+        raise ValueError(
+            f"Unsupported statement type: {statement_type}"
+        )
+
+
+def _normalise_period(value):
+    if value is None:
         return None
 
+    if isinstance(value, datetime):
+        return value.date().isoformat()
 
-def update_client(client_id: int, **kwargs) -> bool:
-    allowed = {"name", "business_name", "business_type", "email", "address", "fiscal_year_end", "phone"}
-    fields = {k: v for k, v in kwargs.items() if k in allowed}
-    if not fields:
-        return False
-    try:
-        res = get_supabase().table(CLIENT_TABLE).update(fields).eq("id", client_id).execute()
-        return bool(res.data)
-    except Exception as exc:
-        print(f"Update client error: {exc}")
-        return False
+    if isinstance(value, date):
+        return value.isoformat()
 
+    text = str(value).strip()
 
-def delete_client(client_id: int) -> bool:
-    try:
-        res = get_supabase().table(CLIENT_TABLE).delete().eq("id", client_id).execute()
-        return bool(res.data)
-    except Exception as exc:
-        print(f"Delete client error: {exc}")
-        return False
-
-
-def count_clients() -> int:
-    try:
-        res = get_supabase().table(CLIENT_TABLE).select("id", count="exact").execute()
-        return int(res.count or 0)
-    except Exception as exc:
-        print(f"Count clients error: {exc}")
-        return 0
-
-
-# ------------------------- Statements / History -------------------------
-def get_statement(client_id: int, statement_type: str, period_end: str = None):
-    """Fetch an exact period, or the latest period if period_end is omitted."""
-    table = _validate_statement_table(statement_type)
-    try:
-        query = get_supabase().table(table).select("*").eq("client_id", client_id)
-        if period_end:
-            query = query.eq("period_end", str(period_end).strip()).order("id", desc=True)
-        else:
-            query = query.order("period_end", desc=True).order("id", desc=True)
-        res = query.limit(1).execute()
-        return res.data[0] if res.data else None
-    except Exception as exc:
-        print(f"Get statement error ({table}, client {client_id}): {exc}")
+    if not text:
         return None
 
-
-def get_statement_history(client_id: int, statement_type: str) -> list:
-    """Return all periods for a client, newest period first."""
-    table = _validate_statement_table(statement_type)
     try:
-        res = (get_supabase().table(table).select("*").eq("client_id", client_id)
-               .order("period_end", desc=True).order("id", desc=True).execute())
-        return res.data or []
-    except Exception as exc:
-        print(f"History error for {table}, client {client_id}: {exc}")
-        return []
+        return date.fromisoformat(text[:10]).isoformat()
+    except ValueError as exc:
+        raise ValueError(
+            f"Invalid period: {value!r}. Expected YYYY-MM-DD."
+        ) from exc
 
 
-def save_statement(client_id: int, statement_type: str, period_end: str = "",
-                   data_json: Any = "", as_at_date: str = "", custom_data: Any = None,
-                   **kwargs) -> int:
-    """Save by exact period: update matching period, otherwise insert a new row.
+def _decode_json(value, default=None):
+    if value is None:
+        return default
 
-    A database lookup error is allowed to raise; it must not be mistaken for
-    'no existing row', because that could create accidental duplicate history.
-    """
-    table = _validate_statement_table(statement_type)
-    period = _period_string(period_end, as_at_date)
-    if not period:
-        raise ValueError("Statement period date is required.")
-
-    data = _decode_json(data_json, {})
-    if data is None:
-        data = {}
-    if not isinstance(data, (dict, list)):
-        raise ValueError("Statement data must be a JSON object or list.")
-
-    conn = get_supabase()
-    lookup = (conn.table(table).select("id").eq("client_id", client_id)
-              .eq("period_end", period).order("id", desc=True).limit(1).execute())
-    existing = lookup.data or []
-
-    payload = {"period_end": period, "data": data}
-    if table in {"trading_pl", "manufacturing"}:
-        # Do not erase custom_data on an update when the caller omits it.
-        if custom_data is not None:
-            payload["custom_data"] = custom_data
-        elif not existing:
-            payload["custom_data"] = []
-
-    if existing:
-        row_id = existing[0]["id"]
-        result = conn.table(table).update(payload).eq("id", row_id).execute()
-        if not result.data:
-            raise RuntimeError(f"Update returned no row for {table}, client {client_id}, period {period}.")
-        return int(row_id)
-
-    payload["client_id"] = client_id
-    result = conn.table(table).insert(payload).execute()
-    if not result.data:
-        raise RuntimeError(f"Insert returned no row for {table}, client {client_id}, period {period}.")
-    return int(result.data[0]["id"])
-
-
-# ---------------------------- Backup / Restore ----------------------------
-def get_all_data_for_backup() -> dict:
-    conn = get_supabase()
-    backup = {}
-    for table in BACKUP_TABLES:
+    if isinstance(value, str):
         try:
-            res = conn.table(table).select("*").execute()
-            backup[table] = res.data or []
-        except Exception as exc:
-            print(f"Backup read error for {table}: {exc}")
-            raise
+            return json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise ValueError("Invalid JSON data.") from exc
+
+    return value
+
+
+def _statement_query(client_id, statement_type):
+    _validate_statement_type(statement_type)
+
+    return (
+        get_supabase()
+        .table(statement_type)
+        .select("*")
+        .eq("client_id", client_id)
+    )
+
+
+# ============================================================
+# CLIENTS
+# ============================================================
+
+# def get_all_clients():
+#     response = (
+#         get_supabase()
+#         .table("clients")
+#         .select("*")
+#         .order("updated_at", desc=True)
+#         .execute()
+#     )
+#     return response.data or []
+
+
+
+def get_all_clients():
+
+    supabase = get_supabase()
+
+    response = (
+        supabase
+        .table("clients")
+        .select("*")
+        .order("created_at", desc=True)
+        .execute()
+    )
+
+    return response.data or []
+
+
+
+
+def get_client(client_id):
+    response = (
+        get_supabase()
+        .table("clients")
+        .select("*")
+        .eq("id", client_id)
+        .limit(1)
+        .execute()
+    )
+    return response.data[0] if response.data else None
+
+
+def create_client(
+    name="",
+    business_name="",
+    business_type="",
+    email="",
+    address="",
+    fiscal_year_end="09-30",
+):
+    payload = {
+        "name": name or "",
+        "business_name": business_name or "",
+        "business_type": business_type or "",
+        "email": email or "",
+        "address": address or "",
+        "fiscal_year_end": fiscal_year_end or "09-30",
+    }
+
+    response = (
+        get_supabase()
+        .table("clients")
+        .insert(payload)
+        .execute()
+    )
+
+    if not response.data:
+        raise RuntimeError("Client was not created.")
+
+    return response.data[0]
+
+
+def update_client(client_id, **fields):
+    allowed = {
+        "name",
+        "business_name",
+        "business_type",
+        "email",
+        "address",
+        "fiscal_year_end",
+    }
+
+    payload = {
+        key: value
+        for key, value in fields.items()
+        if key in allowed
+    }
+
+    if not payload:
+        raise ValueError("No valid client fields supplied.")
+
+    response = (
+        get_supabase()
+        .table("clients")
+        .update(payload)
+        .eq("id", client_id)
+        .execute()
+    )
+
+    if not response.data:
+        raise RuntimeError("Client was not updated.")
+
+    return response.data[0]
+
+
+def delete_client(client_id):
+    """
+    Delete the client row.
+
+    Whether related statements are deleted depends on the database's
+    foreign-key configuration. Verify cascade behaviour before use.
+    """
+    response = (
+        get_supabase()
+        .table("clients")
+        .delete()
+        .eq("id", client_id)
+        .execute()
+    )
+    return response.data
+
+
+# ============================================================
+# STATEMENT READ
+# ============================================================
+
+def get_statement(client_id, statement_type, period_end=None):
+    """
+    With a period: read the newest matching row for that exact period.
+    Without a period: read the latest saved period.
+    """
+
+    query = _statement_query(client_id, statement_type)
+    period = _normalise_period(period_end)
+
+    if period:
+        query = query.eq("period_end", period)
+
+    response = (
+        query
+        .order("period_end", desc=True)
+        .order("id", desc=True)
+        .limit(1)
+        .execute()
+    )
+
+    return response.data[0] if response.data else None
+
+
+def get_statement_history(client_id, statement_type):
+    response = (
+        _statement_query(client_id, statement_type)
+        .order("period_end", desc=True)
+        .order("id", desc=True)
+        .execute()
+    )
+    return response.data or []
+
+
+# ============================================================
+# STATEMENT SAVE
+# ============================================================
+
+
+def save_statement(
+    client_id,
+    statement_type,
+    period_end=None,
+    data_json=None,
+    custom_data=None,
+):
+    """Insert a new period or update the existing client-period record."""
+
+    _validate_statement_type(statement_type)
+
+    period = _normalise_period(period_end)
+
+    if period is None:
+        raise ValueError("A statement period is required.")
+
+    data = _decode_json(data_json, default={})
+
+    if not isinstance(data, dict):
+        raise ValueError("Statement data must be a JSON object.")
+
+    payload = {
+        "client_id": client_id,
+        "period_end": period,
+        "data": data,
+    }
+
+    if statement_type in {
+        "manufacturing",
+        "trading_pl",
+        "balance_sheet",
+    }:
+        custom = _decode_json(custom_data, default={})
+
+        if not isinstance(custom, dict):
+            raise ValueError("Custom data must be a JSON object.")
+
+        payload["custom_data"] = custom
+
+    response = (
+        get_supabase()
+        .table(statement_type)
+        .upsert(
+            payload,
+            on_conflict="client_id,period_end",
+        )
+        .execute()
+    )
+
+    if not response.data:
+        raise RuntimeError(
+            "Statement save failed. Check the table schema, "
+            "permissions, and row-level security policies."
+        )
+
+    return response.data[0]
+
+
+# ============================================================
+# DELETE ONE STATEMENT
+# ============================================================
+
+def delete_statement(client_id, statement_type, statement_id):
+    """
+    Delete exactly one statement row belonging to the specified client.
+    """
+
+    _validate_statement_type(statement_type)
+
+    response = (
+        get_supabase()
+        .table(statement_type)
+        .delete()
+        .eq("id", statement_id)
+        .eq("client_id", client_id)
+        .execute()
+    )
+
+    if not response.data:
+        raise RuntimeError(
+            "No matching statement was deleted."
+        )
+
+    return response.data[0]
+
+
+# ============================================================
+# BACKUP
+# ============================================================
+
+def get_all_data_for_backup():
+    """
+    Return all application table rows as a JSON-serialisable dictionary.
+    """
+
+    backup = {
+        "backup_format_version": 1,
+        "created_at": datetime.now().isoformat(),
+        "tables": {},
+    }
+
+    for table_name in BACKUP_TABLES:
+        response = (
+            get_supabase()
+            .table(table_name)
+            .select("*")
+            .execute()
+        )
+        backup["tables"][table_name] = response.data or []
+
     return backup
 
 
-def restore_from_backup(backup_data: dict) -> bool:
-    """Insert backup records without deleting any existing data.
-
-    This is deliberately non-destructive. Restoring rows with IDs into a
-    non-empty database may fail on duplicate keys; perform replacement only
-    through a separately planned and verified migration.
+def auto_backup_to_file():
     """
-    if not isinstance(backup_data, dict):
-        raise ValueError("Backup data must be a dictionary.")
-    conn = get_supabase()
-    try:
-        for table in BACKUP_TABLES:
-            records = backup_data.get(table, [])
-            if not records:
-                continue
-            if not isinstance(records, list):
-                raise ValueError(f"Backup table {table!r} must contain a list.")
-            conn.table(table).insert(records).execute()
-        return True
-    except Exception as exc:
-        print(f"Restore error: {exc}")
-        return False
+    Save a local JSON backup and retain up to five files.
 
+    Note: local files on Streamlit Cloud may not persist across
+    restarts or redeployments. Download backups to a separate device.
+    """
 
-def auto_backup_to_file() -> bool:
-    """Write a timestamped JSON backup locally (cloud storage may be ephemeral)."""
     try:
+        backup_dir = Path("backups")
+        backup_dir.mkdir(parents=True, exist_ok=True)
+
         backup_data = get_all_data_for_backup()
-        backup_dir = "backups"
-        os.makedirs(backup_dir, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        path = os.path.join(backup_dir, f"auto_backup_{timestamp}.json")
-        with open(path, "w", encoding="utf-8") as file:
-            json.dump(backup_data, file, ensure_ascii=False, indent=2)
-        files = sorted(os.path.join(backup_dir, name) for name in os.listdir(backup_dir)
-                       if name.endswith(".json"))
-        for old_path in files[:-5]:
-            os.remove(old_path)
+        file_path = backup_dir / f"accounting_backup_{timestamp}.json"
+
+        file_path.write_text(
+            json.dumps(
+                backup_data,
+                ensure_ascii=False,
+                indent=2,
+                default=str,
+            ),
+            encoding="utf-8",
+        )
+
+        backup_files = sorted(
+            backup_dir.glob("accounting_backup_*.json"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+
+        for old_file in backup_files[5:]:
+            old_file.unlink()
+
         return True
-    except Exception as exc:
-        print(f"Auto backup error: {exc}")
+
+    except Exception:
         return False
+
+
+# ============================================================
+# RESTORE
+# ============================================================
+
+def restore_from_backup(backup_data):
+    """
+    Non-destructive restore by ID.
+
+    Existing rows with matching IDs are updated; rows with new IDs
+    are inserted. This does not delete rows missing from the backup.
+
+    Restore is not transactional: if a later table fails, earlier
+    tables may already have been restored. Always back up the current
+    database before restoring.
+    """
+
+    if not isinstance(backup_data, dict):
+        raise ValueError("Backup must be a JSON object.")
+
+    tables = backup_data.get("tables", backup_data)
+
+    if not isinstance(tables, dict):
+        raise ValueError("Backup table collection is invalid.")
+
+    results = {}
+
+    # Clients first, so referenced client IDs can exist before statements.
+    for table_name in BACKUP_TABLES:
+        if table_name not in tables:
+            continue
+
+        rows = tables[table_name]
+
+        if not isinstance(rows, list):
+            raise ValueError(
+                f"Backup table {table_name!r} must contain a list."
+            )
+
+        if not rows:
+            results[table_name] = 0
+            continue
+
+        if not all(isinstance(row, dict) for row in rows):
+            raise ValueError(
+                f"Backup table {table_name!r} contains invalid rows."
+            )
+
+        # Avoid writing unknown table names or arbitrary table payloads.
+        if table_name not in BACKUP_TABLES:
+            continue
+
+        # Rows should retain their original IDs to merge safely.
+        if not all(row.get("id") is not None for row in rows):
+            raise ValueError(
+                f"Every row in {table_name!r} must contain its original ID."
+            )
+
+        response = (
+            get_supabase()
+            .table(table_name)
+            .upsert(rows, on_conflict="id")
+            .execute()
+        )
+
+        results[table_name] = len(response.data or [])
+
+    return results

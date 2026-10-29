@@ -283,12 +283,29 @@ statements_config = [
 cols = st.columns(4)
 for idx, stmt in enumerate(statements_config):
     with cols[idx]:
+        # try:
+        #     # ⭐ ရွေးထားတဲ့ ကာလအတွက် စာရင်းရှိမရှိ စစ်မယ်
+        #     existing = db.get_statement(client_id, stmt["key"], period_end=st.session_state.selected_detail_period)
+        #     has_data = existing is not None and existing.get("data") is not None
+        # except Exception:
+        #     has_data = False
+
+        
         try:
-            # ⭐ ရွေးထားတဲ့ ကာလအတွက် စာရင်းရှိမရှိ စစ်မယ်
-            existing = db.get_statement(client_id, stmt["key"], period_end=st.session_state.selected_detail_period)
-            has_data = existing is not None and existing.get("data") is not None
-        except Exception:
+            existing = db.get_statement(
+                client_id,
+                stmt["key"],
+                period_end=st.session_state.selected_detail_period
+            )
+
+            has_data = (
+                existing is not None
+                and existing.get("data") is not None
+            )
+
+        except Exception as e:
             has_data = False
+
 
         status_icon = "✓" if has_data else "○"
         status_text = t("has_data") if has_data else t("no_data")
