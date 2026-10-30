@@ -4,49 +4,17 @@
 import os
 import time
 import streamlit as st
-from dotenv import load_dotenv
+from st_supabase_connection import SupabaseConnection
 from supabase import create_client
-from pathlib import Path
 from supabase import create_client as supabase_create_client
 import json
 from datetime import datetime, date
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-load_dotenv(PROJECT_ROOT / ".env")
+CLIENT_TABLE = "clients"
+STATEMENT_TABLES = {"manufacturing", "trading_pl", "balance_sheet", "cash_flow"}
+BACKUP_TABLES = [CLIENT_TABLE, "manufacturing", "trading_pl", "balance_sheet", "cash_flow"]
 
 
-STATEMENT_TABLES = {
-    "manufacturing",
-    "trading_pl",
-    "balance_sheet",
-    "cash_flow",
-}
-
-BACKUP_TABLES = [
-    "clients",
-    "manufacturing",
-    "trading_pl",
-    "balance_sheet",
-    "cash_flow",
-]
-
-
-load_dotenv()
-
-url = os.getenv("SUPABASE_URL")
-key = os.getenv("SUPABASE_KEY")
-
-if not url or not key:
-    raise ValueError("Supabase credentials are missing")
-
-client = create_client(url, key)
-print("Supabase client created successfully")
-
-# ============================================================
-# SUPABASE CONNECTION
-# ============================================================
-
-@st.cache_resource
 def get_supabase():
     """Connect to Supabase using Streamlit secrets or environment variables."""
 
@@ -304,18 +272,29 @@ def create_client(
         "address": address or "",
         "fiscal_year_end": fiscal_year_end or "09-30",
     }
+    res = get_supabase().table(CLIENT_TABLE).insert(payload).execute()
+    if not res.data:
+        raise RuntimeError("Supabase did not return the newly created client.")
+    return int(res.data[0]["id"])
 
-    response = (
-        get_supabase()
-        .table("clients")
-        .insert(payload)
-        .execute()
-    )
 
-    if not response.data:
-        raise RuntimeError("Client was not created.")
+def get_all_clients() -> list:
+    try:
+        res = get_supabase().table(CLIENT_TABLE).select("*").order("name").execute()
+        return res.data or []
+    except Exception as exc:
+        st.error("Supabase query failed")
+        st.code(f"{type(exc).__name__}: {exc}")
+        return []
 
-    return response.data[0]
+
+def get_client(client_id: int):
+    try:
+        res = get_supabase().table(CLIENT_TABLE).select("*").eq("id", client_id).limit(1).execute()
+        return res.data[0] if res.data else None
+    except Exception as exc:
+        print(f"Get client error: {exc}")
+        return None
 
 
 def update_client(client_id, **fields):
@@ -494,6 +473,61 @@ def delete_statement(client_id, statement_type, statement_id):
         )
 
     return response.data[0]
+
+def get_statement_year_summary(client_id: int, year: int) -> dict:
+    """Count all statement rows for one client and calendar year."""
+    conn = get_supabase()
+    start_date = f"{int(year)}-01-01"
+    end_date = f"{int(year)}-12-31"
+
+    summary = {}
+
+    for table in sorted(STATEMENT_TABLES):
+        response = (
+            conn.table(table)
+            .select("id")
+            .eq("client_id", client_id)
+            .gte("period_end", start_date)
+            .lte("period_end", end_date)
+            .execute()
+        )
+        summary[table] = len(response.data or [])
+
+    return summary
+
+
+def delete_statements_for_year(client_id: int, year: int) -> dict:
+    """Delete all statement rows for one client in one calendar year."""
+    conn = get_supabase()
+    start_date = f"{int(year)}-01-01"
+    end_date = f"{int(year)}-12-31"
+
+    # First verify all tables can be queried.
+    for table in sorted(STATEMENT_TABLES):
+        (
+            conn.table(table)
+            .select("id")
+            .eq("client_id", client_id)
+            .gte("period_end", start_date)
+            .lte("period_end", end_date)
+            .execute()
+        )
+
+    deleted = {}
+
+    # Delete only matching client and year.
+    for table in sorted(STATEMENT_TABLES):
+        response = (
+            conn.table(table)
+            .delete()
+            .eq("client_id", client_id)
+            .gte("period_end", start_date)
+            .lte("period_end", end_date)
+            .execute()
+        )
+        deleted[table] = len(response.data or [])
+
+    return deleted
 
 
 # ============================================================
