@@ -383,6 +383,84 @@ def get_statement_history(client_id, statement_type):
     )
     return response.data or []
 
+def get_statement_years(client_id: int) -> list:
+    """Return calendar years represented by any statement table for this client."""
+    conn = get_supabase()
+    years = set()
+    for table in sorted(STATEMENT_TABLES):
+        response = (
+            conn.table(table)
+            .select("period_end")
+            .eq("client_id", client_id)
+            .execute()
+        )
+        for row in response.data or []:
+            period = row.get("period_end")
+            if period:
+                try:
+                    years.add(int(str(period)[:4]))
+                except (TypeError, ValueError):
+                    continue
+    return sorted(years, reverse=True)
+
+
+def get_statement_year_summary(client_id: int, year: int) -> dict:
+    """Count statement rows whose period_end falls in the selected calendar year."""
+    conn = get_supabase()
+    year = int(year)
+    start_date = f"{year}-01-01"
+    end_date = f"{year}-12-31"
+    summary = {}
+    for table in sorted(STATEMENT_TABLES):
+        response = (
+            conn.table(table)
+            .select("id")
+            .eq("client_id", client_id)
+            .gte("period_end", start_date)
+            .lte("period_end", end_date)
+            .execute()
+        )
+        summary[table] = len(response.data or [])
+    return summary
+
+
+def delete_statements_for_year(client_id: int, year: int) -> dict:
+    """Delete this client's statement rows whose period_end falls in a calendar year.
+
+    This performs a preflight read, then deletes table by table. Supabase does not
+    make these separate requests one atomic transaction; a later failure can mean
+    some earlier tables have already been deleted.
+    """
+    conn = get_supabase()
+    year = int(year)
+    start_date = f"{year}-01-01"
+    end_date = f"{year}-12-31"
+
+    # Preflight all tables before starting deletion, so query/schema errors are
+    # discovered before any table is changed.
+    for table in sorted(STATEMENT_TABLES):
+        (
+            conn.table(table)
+            .select("id")
+            .eq("client_id", client_id)
+            .gte("period_end", start_date)
+            .lte("period_end", end_date)
+            .execute()
+        )
+
+    deleted = {}
+    for table in sorted(STATEMENT_TABLES):
+        response = (
+            conn.table(table)
+            .delete()
+            .eq("client_id", client_id)
+            .gte("period_end", start_date)
+            .lte("period_end", end_date)
+            .execute()
+        )
+        deleted[table] = len(response.data or [])
+    return deleted
+
 
 # ============================================================
 # STATEMENT SAVE

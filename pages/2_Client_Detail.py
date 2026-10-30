@@ -1,4 +1,3 @@
-# pages/2_Client_Detail.py
 """
 Client Detail — ဖောက်သည် အသေးစိတ် + ရှင်းတမ်း ၄ ခု Overview (Multi-Year Support)
 """
@@ -236,6 +235,114 @@ else:
         st.session_state["selected_client_id"] = client_id
         st.session_state["selected_client_name"] = client_display_name
         st.switch_page("pages/4_Trading_PL.py")
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# ============================================================
+# DELETE STATEMENTS BY YEAR
+# ============================================================
+
+st.divider()
+st.markdown(
+    "### 🗑️ နှစ်အလိုက် စာရင်းဒေတာ ဖျက်ရန်" if st.session_state.get("language", "my") == "my"
+    else "### 🗑️ Delete Statement Data by Year"
+)
+st.caption(
+    "ရွေးချယ်ထားသော နှစ်အတွင်းရှိ Manufacturing, Trading P/L, Balance Sheet နှင့် Cash Flow စာရင်းများကိုသာ ဖျက်ပါမည်။ Client ကို မဖျက်ပါ။"
+    if st.session_state.get("language", "my") == "my"
+    else "This deletes only Manufacturing, Trading P/L, Balance Sheet and Cash Flow records whose period_end falls in the selected calendar year. The client will not be deleted."
+)
+
+try:
+    available_years = db.get_statement_years(client_id)
+except Exception as e:
+    available_years = []
+    st.error(f"နှစ်စာရင်း ရယူရာတွင် အမှားဖြစ်နေသည်: {e}" if st.session_state.get("language", "my") == "my" else f"Could not load statement years: {e}")
+
+if available_years:
+    selected_delete_year = st.selectbox(
+        "ဖျက်လိုသောနှစ် ရွေးပါ" if st.session_state.get("language", "my") == "my" else "Select year to delete",
+        options=available_years,
+        format_func=lambda year: str(year),
+        key="delete_statement_year_select",
+    )
+
+    try:
+        year_summary = db.get_statement_year_summary(client_id, selected_delete_year)
+        total_year_rows = sum(year_summary.values())
+        summary_labels = {
+            "manufacturing": "ထုတ်လုပ်မှုစာရင်း" if st.session_state.get("language", "my") == "my" else "Manufacturing",
+            "trading_pl": "အရှုံးအမြတ်စာရင်း" if st.session_state.get("language", "my") == "my" else "Trading P/L",
+            "balance_sheet": "လက်ကျန်ရှင်းတမ်း" if st.session_state.get("language", "my") == "my" else "Balance Sheet",
+            "cash_flow": "ငွေသားစီးဆင်းမှု" if st.session_state.get("language", "my") == "my" else "Cash Flow",
+        }
+        st.write(
+            f"**{selected_delete_year} ခုနှစ်အတွက် တွေ့ရှိသော စာရင်းများ**" if st.session_state.get("language", "my") == "my"
+            else f"**Records found for {selected_delete_year}**"
+        )
+        count_cols = st.columns(4)
+        for col, table_name in zip(count_cols, ["manufacturing", "trading_pl", "balance_sheet", "cash_flow"]):
+            with col:
+                st.metric(summary_labels[table_name], year_summary.get(table_name, 0))
+
+        if total_year_rows == 0:
+            st.info("ဒီနှစ်အတွက် ဖျက်ရန် စာရင်းမရှိပါ။" if st.session_state.get("language", "my") == "my" else "There are no statement records to delete for this year.")
+        else:
+            if st.button(
+                f"🗑️ {selected_delete_year} ခုနှစ် စာရင်းများ ဖျက်ရန်" if st.session_state.get("language", "my") == "my"
+                else f"🗑️ Delete {selected_delete_year} Statement Data",
+                type="primary",
+                key="start_delete_year",
+            ):
+                st.session_state["confirm_delete_statement_year"] = int(selected_delete_year)
+                st.rerun()
+    except Exception as e:
+        st.error(f"စာရင်းအရေအတွက် စစ်ဆေးရာတွင် အမှားဖြစ်နေသည်: {e}" if st.session_state.get("language", "my") == "my" else f"Could not count records for this year: {e}")
+else:
+    st.info("ဖျက်နိုင်သော နှစ်အလိုက် စာရင်းဒေတာ မရှိသေးပါ။" if st.session_state.get("language", "my") == "my" else "No statement years are available to delete.")
+
+if st.session_state.get("confirm_delete_statement_year"):
+    year_to_delete = int(st.session_state["confirm_delete_statement_year"])
+    st.warning(
+        f"⚠️ သေချာပါသလား။ {year_to_delete} ခုနှစ်အတွင်းရှိ ရှင်းတမ်းဒေတာများကို ဖျက်ပါမည်။ ဤလုပ်ဆောင်ချက်ကို ပြန်လည်ပြင်ဆင်၍ မရနိုင်ပါ။"
+        if st.session_state.get("language", "my") == "my"
+        else f"⚠️ Are you sure? All statement records with a period_end in {year_to_delete} will be deleted. This action cannot be undone."
+    )
+    confirm_col, cancel_col, _ = st.columns([1, 1, 4])
+    with confirm_col:
+        if st.button(
+            "အတည်ပြု ဖျက်မည်" if st.session_state.get("language", "my") == "my" else "Confirm Delete",
+            type="primary",
+            key="confirm_delete_year_button",
+        ):
+            try:
+                deleted_counts = db.delete_statements_for_year(client_id, year_to_delete)
+                deleted_total = sum(deleted_counts.values())
+                st.session_state.pop("confirm_delete_statement_year", None)
+                # If the currently selected statement period belongs to the deleted year,
+                # clear it so the page does not keep pointing at a deleted period.
+                current_period = st.session_state.get("selected_detail_period", "")
+                if str(current_period).startswith(str(year_to_delete)):
+                    st.session_state.pop("selected_detail_period", None)
+                st.success(
+                    f"✓ {year_to_delete} ခုနှစ်၏ စာရင်း {deleted_total} ခု ဖျက်ပြီးပါပြီ။"
+                    if st.session_state.get("language", "my") == "my"
+                    else f"✓ Deleted {deleted_total} statement records for {year_to_delete}."
+                )
+                st.rerun()
+            except Exception as e:
+                st.error(
+                    f"ဖျက်ရာတွင် အမှားဖြစ်နေသည်: {e}။ အချို့ဇယားများမှ ဖျက်ပြီးသား ဖြစ်နိုင်သဖြင့် Database ကို ပြန်စစ်ပါ။"
+                    if st.session_state.get("language", "my") == "my"
+                    else f"Delete failed: {e}. Some tables may already have been deleted; please check the database."
+                )
+    with cancel_col:
+        if st.button(
+            "မဖျက်တော့ပါ" if st.session_state.get("language", "my") == "my" else "Cancel",
+            key="cancel_delete_year_button",
+        ):
+            st.session_state.pop("confirm_delete_statement_year", None)
+            st.rerun()
 
 st.markdown("<br>", unsafe_allow_html=True)
 
