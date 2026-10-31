@@ -1,19 +1,43 @@
 
-# core/db.py
-
 import os
-import time
-import streamlit as st
-from st_supabase_connection import SupabaseConnection
-from supabase import create_client
-from supabase import create_client as supabase_create_client
 import json
 from datetime import datetime, date
 
-CLIENT_TABLE = "clients"
-STATEMENT_TABLES = {"manufacturing", "trading_pl", "balance_sheet", "cash_flow"}
-BACKUP_TABLES = [CLIENT_TABLE, "manufacturing", "trading_pl", "balance_sheet", "cash_flow"]
+import streamlit as st
+from supabase import create_client as supabase_create_client
 
+
+# ============================================================
+# DATABASE CONFIGURATION
+# ============================================================
+
+CLIENT_TABLE = "clients"
+
+STATEMENT_TABLES = {
+    "manufacturing",
+    "trading_pl",
+    "balance_sheet",
+    "cash_flow",
+}
+
+BACKUP_TABLES = [
+    CLIENT_TABLE,
+    "manufacturing",
+    "trading_pl",
+    "balance_sheet",
+    "cash_flow",
+]
+
+CUSTOM_DATA_TABLES = {
+    "manufacturing",
+    "trading_pl",
+    "balance_sheet",
+}
+
+
+# ============================================================
+# SUPABASE CONNECTION
+# ============================================================
 
 def get_supabase():
     """Connect to Supabase using Streamlit secrets or environment variables."""
@@ -21,136 +45,37 @@ def get_supabase():
     url = None
     key = None
 
-    # Option 1: Streamlit Secrets under [connections.supabase]
+    # Option 1: Streamlit Secrets
     try:
-        config = st.secrets.get("connections", {}).get("supabase", {})
-        url = config.get("url") or config.get("SUPABASE_URL")
-        key = config.get("key") or config.get("SUPABASE_KEY")
-    except Exception:
+        url = st.secrets["connections"]["supabase"]["url"]
+        key = st.secrets["connections"]["supabase"]["key"]
+    except (KeyError, FileNotFoundError):
         pass
 
     # Option 2: Top-level Streamlit Secrets
     if not url or not key:
         try:
-            url = url or st.secrets.get("SUPABASE_URL")
-            key = key or st.secrets.get("SUPABASE_KEY")
-        except Exception:
+            url = url or st.secrets["SUPABASE_URL"]
+            key = key or st.secrets["SUPABASE_KEY"]
+        except (KeyError, FileNotFoundError):
             pass
 
-    # Option 3: Environment variables
+    # Option 3: Environment Variables
     url = url or os.getenv("SUPABASE_URL")
     key = key or os.getenv("SUPABASE_KEY")
 
     if not url or not key:
-        try:
-            top_level_keys = list(st.secrets.keys())
-            print("Secrets top-level keys:", top_level_keys)
-
-            if "connections" in st.secrets:
-                connections = st.secrets["connections"]
-                print("Connection names:", list(connections.keys()))
-
-                if "supabase" in connections:
-                    supabase_config = connections["supabase"]
-                    print("Supabase config keys:", list(supabase_config.keys()))
-            else:
-                print("No 'connections' section found in st.secrets")
-
-        except Exception as e:
-            print("Secrets diagnostic error:", type(e).__name__, str(e))
-
         raise RuntimeError(
-            f"Supabase configuration missing: "
+            "Supabase configuration missing: "
             f"url_found={bool(url)}, key_found={bool(key)}"
         )
-    
 
-    start = time.time()
     client = supabase_create_client(url, key)
-
     return client
 
 def init_db():
-    # Supabase schema is managed outside this application.
+    """Supabase schema is managed outside this application."""
     return None
-
-
-def get_dashboard_stats() -> dict:
-    """Dashboard အတွက် client နှင့် statement အရေအတွက်များ ရယူခြင်း။"""
-    default_stats = {
-        "total_clients": 0,
-        "total_statements": 0,
-        "latest_update": "—",
-    }
-
-    try:
-        conn = get_supabase()
-
-        # 1. Total clients
-        clients_res = (
-            conn.table("clients")
-            .select("id", count="exact")
-            .execute()
-        )
-        total_clients = clients_res.count or 0
-
-        # 2. Client တစ်ဦးချင်းစီမှာ statement type တစ်မျိုးစီ
-        #    အနည်းဆုံးတစ်ခု ရှိ/မရှိ စစ်မယ်။
-        total_statements = 0
-
-        clients = (
-            conn.table("clients")
-            .select("id")
-            .execute()
-        ).data or []
-
-        statement_tables = [
-            "manufacturing",
-            "trading_pl",
-            "balance_sheet",
-            "cash_flow",
-        ]
-
-        for client in clients:
-            client_id = client["id"]
-
-            for table in statement_tables:
-                result = (
-                    conn.table(table)
-                    .select("id")
-                    .eq("client_id", client_id)
-                    .limit(1)
-                    .execute()
-                )
-
-                if result.data:
-                    total_statements += 1
-
-        # 3. နောက်ဆုံးဖန်တီးထားသော client ရက်စွဲ
-        latest_res = (
-            conn.table("clients")
-            .select("created_at")
-            .order("created_at", desc=True)
-            .limit(1)
-            .execute()
-        )
-
-        latest_update = "—"
-        if latest_res.data:
-            created_at = latest_res.data[0].get("created_at")
-            if created_at:
-                latest_update = str(created_at)[:10]
-
-        return {
-            "total_clients": total_clients,
-            "total_statements": total_statements,
-            "latest_update": latest_update,
-        }
-
-    except Exception as e:
-        print(f"Dashboard stats error: {e}")
-        return default_stats
-
 
 
 # ============================================================
@@ -165,6 +90,8 @@ def _validate_statement_type(statement_type):
 
 
 def _normalise_period(value):
+    """Convert a date/datetime/string into YYYY-MM-DD."""
+
     if value is None:
         return None
 
@@ -188,6 +115,8 @@ def _normalise_period(value):
 
 
 def _decode_json(value, default=None):
+    """Decode JSON strings while accepting already-decoded Python objects."""
+
     if value is None:
         return default
 
@@ -201,6 +130,8 @@ def _decode_json(value, default=None):
 
 
 def _statement_query(client_id, statement_type):
+    """Create a base query for one client's selected statement table."""
+
     _validate_statement_type(statement_type)
 
     return (
@@ -212,48 +143,123 @@ def _statement_query(client_id, statement_type):
 
 
 # ============================================================
+# DASHBOARD
+# ============================================================
+
+def get_dashboard_stats() -> dict:
+    """Dashboard အတွက် client နှင့် statement အရေအတွက်များ ရယူခြင်း။"""
+
+    default_stats = {
+        "total_clients": 0,
+        "total_statements": 0,
+        "latest_update": "—",
+    }
+
+    try:
+        conn = get_supabase()
+
+        # Total clients
+        clients_res = (
+            conn.table(CLIENT_TABLE)
+            .select("id", count="exact")
+            .execute()
+        )
+
+        total_clients = clients_res.count or 0
+
+        # Count statement types that have at least one record
+        total_statements = 0
+
+        clients = (
+            conn.table(CLIENT_TABLE)
+            .select("id")
+            .execute()
+        ).data or []
+
+        for client in clients:
+            client_id = client["id"]
+
+            for table in sorted(STATEMENT_TABLES):
+                result = (
+                    conn.table(table)
+                    .select("id")
+                    .eq("client_id", client_id)
+                    .limit(1)
+                    .execute()
+                )
+
+                if result.data:
+                    total_statements += 1
+
+        # Latest client creation date
+        latest_res = (
+            conn.table(CLIENT_TABLE)
+            .select("created_at")
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+
+        latest_update = "—"
+
+        if latest_res.data:
+            created_at = latest_res.data[0].get("created_at")
+
+            if created_at:
+                latest_update = str(created_at)[:10]
+
+        return {
+            "total_clients": total_clients,
+            "total_statements": total_statements,
+            "latest_update": latest_update,
+        }
+
+    except Exception as exc:
+        print(f"Dashboard stats error: {exc}")
+        return default_stats
+
+
+# ============================================================
 # CLIENTS
 # ============================================================
 
-# def get_all_clients():
-#     response = (
-#         get_supabase()
-#         .table("clients")
-#         .select("*")
-#         .order("updated_at", desc=True)
-#         .execute()
-#     )
-#     return response.data or []
+def get_all_clients() -> list:
+    """Client အားလုံးကို အမည်အလိုက် ရယူခြင်း။"""
+
+    try:
+        response = (
+            get_supabase()
+            .table(CLIENT_TABLE)
+            .select("*")
+            .order("name")
+            .execute()
+        )
+
+        return response.data or []
+
+    except Exception as exc:
+        print(f"Get all clients error: {exc}")
+        raise
 
 
+def get_client(client_id: int):
+    """Get one client by ID."""
 
-def get_all_clients():
+    try:
+        response = (
+            get_supabase()
+            .table(CLIENT_TABLE)
+            .select("*")
+            .eq("id", client_id)
+            .limit(1)
+            .execute()
+        )
 
-    supabase = get_supabase()
+        return response.data[0] if response.data else None
 
-    response = (
-        supabase
-        .table("clients")
-        .select("*")
-        .order("created_at", desc=True)
-        .execute()
-    )
-
-    return response.data or []
-
-
-
-
-def get_client(client_id):
-    response = (
-        get_supabase()
-        .table("clients")
-        .select("*")
-        .eq("id", client_id)
-        .limit(1)
-        .execute()
-    )
-    return response.data[0] if response.data else None
+    except Exception as exc:
+        print(f"Get client error: {exc}")
+        raise
 
 
 def create_client(
@@ -264,6 +270,8 @@ def create_client(
     address="",
     fiscal_year_end="09-30",
 ):
+    """Create a new client."""
+
     payload = {
         "name": name or "",
         "business_name": business_name or "",
@@ -272,32 +280,25 @@ def create_client(
         "address": address or "",
         "fiscal_year_end": fiscal_year_end or "09-30",
     }
-    res = get_supabase().table(CLIENT_TABLE).insert(payload).execute()
-    if not res.data:
-        raise RuntimeError("Supabase did not return the newly created client.")
-    return int(res.data[0]["id"])
 
+    response = (
+        get_supabase()
+        .table(CLIENT_TABLE)
+        .insert(payload)
+        .execute()
+    )
 
-def get_all_clients() -> list:
-    try:
-        res = get_supabase().table(CLIENT_TABLE).select("*").order("name").execute()
-        return res.data or []
-    except Exception as exc:
-        st.error("Supabase query failed")
-        st.code(f"{type(exc).__name__}: {exc}")
-        return []
+    if not response.data:
+        raise RuntimeError(
+            "Supabase did not return the newly created client."
+        )
 
-
-def get_client(client_id: int):
-    try:
-        res = get_supabase().table(CLIENT_TABLE).select("*").eq("id", client_id).limit(1).execute()
-        return res.data[0] if res.data else None
-    except Exception as exc:
-        print(f"Get client error: {exc}")
-        return None
+    return int(response.data[0]["id"])
 
 
 def update_client(client_id, **fields):
+    """Update allowed client fields only."""
+
     allowed = {
         "name",
         "business_name",
@@ -318,7 +319,7 @@ def update_client(client_id, **fields):
 
     response = (
         get_supabase()
-        .table("clients")
+        .table(CLIENT_TABLE)
         .update(payload)
         .eq("id", client_id)
         .execute()
@@ -331,19 +332,16 @@ def update_client(client_id, **fields):
 
 
 def delete_client(client_id):
-    """
-    Delete the client row.
+    """Delete one client."""
 
-    Whether related statements are deleted depends on the database's
-    foreign-key configuration. Verify cascade behaviour before use.
-    """
     response = (
         get_supabase()
-        .table("clients")
+        .table(CLIENT_TABLE)
         .delete()
         .eq("id", client_id)
         .execute()
     )
+
     return response.data
 
 
@@ -353,14 +351,20 @@ def delete_client(client_id):
 
 def get_statement(client_id, statement_type, period_end=None):
     """
-    With a period: read the newest matching row for that exact period.
-    Without a period: read the latest saved period.
+    Read one statement.
+
+    If period_end is supplied:
+        Read only that exact period.
+
+    If period_end is omitted:
+        Read the latest saved period.
     """
 
     query = _statement_query(client_id, statement_type)
+
     period = _normalise_period(period_end)
 
-    if period:
+    if period is not None:
         query = query.eq("period_end", period)
 
     response = (
@@ -375,18 +379,28 @@ def get_statement(client_id, statement_type, period_end=None):
 
 
 def get_statement_history(client_id, statement_type):
+    """Get all saved periods for one client and statement type."""
+
     response = (
         _statement_query(client_id, statement_type)
         .order("period_end", desc=True)
         .order("id", desc=True)
         .execute()
     )
+
     return response.data or []
 
+
+# ============================================================
+# STATEMENT YEARS
+# ============================================================
+
 def get_statement_years(client_id: int) -> list:
-    """Return calendar years represented by any statement table for this client."""
+    """Return calendar years represented by any statement table."""
+
     conn = get_supabase()
     years = set()
+
     for table in sorted(STATEMENT_TABLES):
         response = (
             conn.table(table)
@@ -394,23 +408,32 @@ def get_statement_years(client_id: int) -> list:
             .eq("client_id", client_id)
             .execute()
         )
+
         for row in response.data or []:
             period = row.get("period_end")
-            if period:
-                try:
-                    years.add(int(str(period)[:4]))
-                except (TypeError, ValueError):
-                    continue
+
+            if not period:
+                continue
+
+            try:
+                years.add(int(str(period)[:4]))
+            except (TypeError, ValueError):
+                continue
+
     return sorted(years, reverse=True)
 
 
 def get_statement_year_summary(client_id: int, year: int) -> dict:
-    """Count statement rows whose period_end falls in the selected calendar year."""
+    """Count statement rows for one client and calendar year."""
+
     conn = get_supabase()
     year = int(year)
+
     start_date = f"{year}-01-01"
     end_date = f"{year}-12-31"
+
     summary = {}
+
     for table in sorted(STATEMENT_TABLES):
         response = (
             conn.table(table)
@@ -420,24 +443,26 @@ def get_statement_year_summary(client_id: int, year: int) -> dict:
             .lte("period_end", end_date)
             .execute()
         )
+
         summary[table] = len(response.data or [])
+
     return summary
 
 
 def delete_statements_for_year(client_id: int, year: int) -> dict:
-    """Delete this client's statement rows whose period_end falls in a calendar year.
-
-    This performs a preflight read, then deletes table by table. Supabase does not
-    make these separate requests one atomic transaction; a later failure can mean
-    some earlier tables have already been deleted.
     """
+    Delete all statement rows for one client in one calendar year.
+
+    This is not a single database transaction.
+    """
+
     conn = get_supabase()
+
     year = int(year)
     start_date = f"{year}-01-01"
     end_date = f"{year}-12-31"
 
-    # Preflight all tables before starting deletion, so query/schema errors are
-    # discovered before any table is changed.
+    # Preflight: verify all tables can be queried before deletion.
     for table in sorted(STATEMENT_TABLES):
         (
             conn.table(table)
@@ -449,6 +474,7 @@ def delete_statements_for_year(client_id: int, year: int) -> dict:
         )
 
     deleted = {}
+
     for table in sorted(STATEMENT_TABLES):
         response = (
             conn.table(table)
@@ -458,14 +484,15 @@ def delete_statements_for_year(client_id: int, year: int) -> dict:
             .lte("period_end", end_date)
             .execute()
         )
+
         deleted[table] = len(response.data or [])
+
     return deleted
 
 
 # ============================================================
 # STATEMENT SAVE
 # ============================================================
-
 
 def save_statement(
     client_id,
@@ -474,7 +501,15 @@ def save_statement(
     data_json=None,
     custom_data=None,
 ):
-    """Insert a new period or update the existing client-period record."""
+    """
+    Save a statement for one exact client and accounting period.
+
+    Same client + same statement type + same period:
+        Update the existing record.
+
+    Same client + same statement type + different period:
+        Create a separate record.
+    """
 
     _validate_statement_type(statement_type)
 
@@ -494,11 +529,7 @@ def save_statement(
         "data": data,
     }
 
-    if statement_type in {
-        "manufacturing",
-        "trading_pl",
-        "balance_sheet",
-    }:
+    if statement_type in CUSTOM_DATA_TABLES:
         custom = _decode_json(custom_data, default={})
 
         if not isinstance(custom, dict):
@@ -519,7 +550,7 @@ def save_statement(
     if not response.data:
         raise RuntimeError(
             "Statement save failed. Check the table schema, "
-            "permissions, and row-level security policies."
+            "unique constraint, permissions, and RLS policies."
         )
 
     return response.data[0]
@@ -530,9 +561,7 @@ def save_statement(
 # ============================================================
 
 def delete_statement(client_id, statement_type, statement_id):
-    """
-    Delete exactly one statement row belonging to the specified client.
-    """
+    """Delete exactly one statement belonging to the specified client."""
 
     _validate_statement_type(statement_type)
 
@@ -546,66 +575,9 @@ def delete_statement(client_id, statement_type, statement_id):
     )
 
     if not response.data:
-        raise RuntimeError(
-            "No matching statement was deleted."
-        )
+        raise RuntimeError("No matching statement was deleted.")
 
     return response.data[0]
-
-def get_statement_year_summary(client_id: int, year: int) -> dict:
-    """Count all statement rows for one client and calendar year."""
-    conn = get_supabase()
-    start_date = f"{int(year)}-01-01"
-    end_date = f"{int(year)}-12-31"
-
-    summary = {}
-
-    for table in sorted(STATEMENT_TABLES):
-        response = (
-            conn.table(table)
-            .select("id")
-            .eq("client_id", client_id)
-            .gte("period_end", start_date)
-            .lte("period_end", end_date)
-            .execute()
-        )
-        summary[table] = len(response.data or [])
-
-    return summary
-
-
-def delete_statements_for_year(client_id: int, year: int) -> dict:
-    """Delete all statement rows for one client in one calendar year."""
-    conn = get_supabase()
-    start_date = f"{int(year)}-01-01"
-    end_date = f"{int(year)}-12-31"
-
-    # First verify all tables can be queried.
-    for table in sorted(STATEMENT_TABLES):
-        (
-            conn.table(table)
-            .select("id")
-            .eq("client_id", client_id)
-            .gte("period_end", start_date)
-            .lte("period_end", end_date)
-            .execute()
-        )
-
-    deleted = {}
-
-    # Delete only matching client and year.
-    for table in sorted(STATEMENT_TABLES):
-        response = (
-            conn.table(table)
-            .delete()
-            .eq("client_id", client_id)
-            .gte("period_end", start_date)
-            .lte("period_end", end_date)
-            .execute()
-        )
-        deleted[table] = len(response.data or [])
-
-    return deleted
 
 
 # ============================================================
@@ -613,9 +585,7 @@ def delete_statements_for_year(client_id: int, year: int) -> dict:
 # ============================================================
 
 def get_all_data_for_backup():
-    """
-    Return all application table rows as a JSON-serialisable dictionary.
-    """
+    """Return all application table rows as a JSON-serialisable dictionary."""
 
     backup = {
         "backup_format_version": 1,
@@ -623,13 +593,15 @@ def get_all_data_for_backup():
         "tables": {},
     }
 
+    conn = get_supabase()
+
     for table_name in BACKUP_TABLES:
         response = (
-            get_supabase()
-            .table(table_name)
+            conn.table(table_name)
             .select("*")
             .execute()
         )
+
         backup["tables"][table_name] = response.data or []
 
     return backup
@@ -639,8 +611,8 @@ def auto_backup_to_file():
     """
     Save a local JSON backup and retain up to five files.
 
-    Note: local files on Streamlit Cloud may not persist across
-    restarts or redeployments. Download backups to a separate device.
+    Streamlit Cloud local files may not persist across restarts.
+    Download backups to a separate device.
     """
 
     try:
@@ -648,8 +620,13 @@ def auto_backup_to_file():
         backup_dir.mkdir(parents=True, exist_ok=True)
 
         backup_data = get_all_data_for_backup()
+
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        file_path = backup_dir / f"accounting_backup_{timestamp}.json"
+
+        file_path = (
+            backup_dir
+            / f"accounting_backup_{timestamp}.json"
+        )
 
         file_path.write_text(
             json.dumps(
@@ -672,7 +649,8 @@ def auto_backup_to_file():
 
         return True
 
-    except Exception:
+    except Exception as exc:
+        print(f"Backup error: {exc}")
         return False
 
 
@@ -684,12 +662,11 @@ def restore_from_backup(backup_data):
     """
     Non-destructive restore by ID.
 
-    Existing rows with matching IDs are updated; rows with new IDs
-    are inserted. This does not delete rows missing from the backup.
+    Existing rows with matching IDs are updated.
+    Rows with new IDs are inserted.
+    Rows missing from the backup are not deleted.
 
-    Restore is not transactional: if a later table fails, earlier
-    tables may already have been restored. Always back up the current
-    database before restoring.
+    Restore is not transactional.
     """
 
     if not isinstance(backup_data, dict):
@@ -702,8 +679,9 @@ def restore_from_backup(backup_data):
 
     results = {}
 
-    # Clients first, so referenced client IDs can exist before statements.
+    # Restore clients first.
     for table_name in BACKUP_TABLES:
+
         if table_name not in tables:
             continue
 
@@ -714,20 +692,15 @@ def restore_from_backup(backup_data):
                 f"Backup table {table_name!r} must contain a list."
             )
 
-        if not rows:
-            results[table_name] = 0
-            continue
-
         if not all(isinstance(row, dict) for row in rows):
             raise ValueError(
                 f"Backup table {table_name!r} contains invalid rows."
             )
 
-        # Avoid writing unknown table names or arbitrary table payloads.
-        if table_name not in BACKUP_TABLES:
+        if not rows:
+            results[table_name] = 0
             continue
 
-        # Rows should retain their original IDs to merge safely.
         if not all(row.get("id") is not None for row in rows):
             raise ValueError(
                 f"Every row in {table_name!r} must contain its original ID."
@@ -736,7 +709,10 @@ def restore_from_backup(backup_data):
         response = (
             get_supabase()
             .table(table_name)
-            .upsert(rows, on_conflict="id")
+            .upsert(
+                rows,
+                on_conflict="id",
+            )
             .execute()
         )
 

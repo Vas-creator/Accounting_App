@@ -561,8 +561,15 @@ def _build_html_header(client_name: str, title: str, period_str: str, business_n
     </div>
     """
 
-def _build_html_row(sr: str, label: str, value: float, is_subtotal=False, is_total=False,
-                    is_deduction=False, is_bold=False):
+def _build_html_row(
+    sr: str,
+    label: str,
+    value: float,
+    is_subtotal=False,
+    is_total=False,
+    is_deduction=False,
+    is_bold=False
+):
     if is_subtotal:
         css_class = "subtotal-row"
     elif is_total:
@@ -570,7 +577,9 @@ def _build_html_row(sr: str, label: str, value: float, is_subtotal=False, is_tot
     else:
         css_class = ""
 
-    amount_str = format_number(value, decimals=0)
+    # Deduction ဖြစ်ရင် အနုတ်လက္ခဏာမပါဘဲ ကွင်းစကွင်းပိတ်နဲ့ပြမယ်
+    amount_str = format_number(abs(value) if is_deduction else value, decimals=0)
+
     if is_deduction:
         amount_str = f"({amount_str})"
 
@@ -786,46 +795,74 @@ def _render_trading_pl_html(t: Dict[str, Any], lang: str, data: Dict[str, Any]) 
     html += _build_row_5("", gp_label, "", "", format_number(gp["value"]), css="total-row", is_bold=True)
 
     # --- 3. P&L Account ---
+        # --- 3. P&L Account ---
     html += f'<tr class="section-header"><td colspan="5">{get_pdf_text(lang, "pl_acc_title")}</td></tr>'
     html += f'<tr class="section-header"><td colspan="5">{get_pdf_text(lang, "expenses")}</td></tr>'
-    
-    if lang == "my":
-        default_expenses_map = {
-            "staff_salary": "ဝန်ထမ်းခနှင့် အလုပ်သမားခ",
-            "tax_other": "အခွန်နှင့် အခြား",
-            "electricity": "လျှပ်စစ်",
-            "telephone": "တယ်လီဖုန်း",
-            "fuel": "လောင်စာ",
-            "repair_maintenance": "ပြုပြင်ထိန်းသိမ်းမှု",
-            "general_expenses": "အထွေထွေ သုံးစွဲမှု",
-        }
-    else:
-        default_expenses_map = {
-            "staff_salary": "Staff Salary & Wages",
-            "tax_other": "Tax & Other",
-            "electricity": "Electricity",
-            "telephone": "Telephone",
-            "fuel": "Fuel",
-            "repair_maintenance": "Repair & Maintenance",
-            "general_expenses": "General Expenses",
-        }
 
-    for key, label in default_expenses_map.items():
+    # Template ထဲက Expense items တွေကို တိုက်ရိုက်ဖတ်မယ်။
+    # ဒီနည်းနဲ့ depreciation_office အပါအဝင် Template ထဲက Expense အားလုံး ပေါ်လာမယ်။
+    expense_items = t["profit_loss"]["expenses"]["items"]
+
+    for key, item in expense_items.items():
         if show_expenses.get(key, True):
-            val = parse_number(data.get(key, 0))
-            if val > 0:
-                html += _build_row_5(get_sr(), label, "", format_number(val), "")
-    
+            val = parse_number(item.get("value", 0))
+
+            if val != 0:
+                label = (
+                    item.get("label_mm", key)
+                    if lang == "my"
+                    else item.get("label_en", key)
+                )
+
+                html += _build_row_5(
+                    get_sr(),
+                    label,
+                    "",
+                    format_number(abs(val)),
+                    ""
+                )
+
+    # Custom Expenses
     for item in custom_data.get("expenses", []):
-        if item.get("label") and item.get("value", 0) > 0:
-            html += _build_row_5(get_sr(), item["label"], "", format_number(item["value"]), "")
-    
-    html += _build_row_5("", get_pdf_text(lang, "expenses_total"), "", "", format_number(t["profit_loss"]["expenses"]["expenses_total"]), css="subtotal-row", is_bold=True)
+        val = parse_number(item.get("value", 0))
+
+        if item.get("label") and val != 0:
+            html += _build_row_5(
+                get_sr(),
+                item["label"],
+                "",
+                format_number(abs(val)),
+                ""
+            )
+
+    html += _build_row_5(
+        "",
+        get_pdf_text(lang, "expenses_total"),
+        "",
+        "",
+        format_number(t["profit_loss"]["expenses"]["expenses_total"]),
+        css="subtotal-row",
+        is_bold=True
+    )
 
     np_ = t["profit_loss"]["net_profit"]
-    np_label = get_pdf_text(lang, "net_profit") if np_["value"] >= 0 else ("အသားတင် အရှုံး" if lang=="my" else "Net Loss")
-    html += _build_row_5("", np_label, "", "", format_number(np_["value"]), css="total-row", is_bold=True)
-    
+
+    np_label = (
+        get_pdf_text(lang, "net_profit")
+        if np_["value"] >= 0
+        else ("အသားတင် အရှုံး" if lang == "my" else "Net Loss")
+    )
+
+    html += _build_row_5(
+        "",
+        np_label,
+        "",
+        "",
+        format_number(np_["value"]),
+        css="total-row",
+        is_bold=True
+    )
+
     return html
 
 def _render_balance_sheet_html(t: Dict[str, Any], lang: str, data: Dict[str, Any]) -> str:
