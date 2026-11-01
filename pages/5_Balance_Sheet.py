@@ -97,21 +97,25 @@ EMPTY_CUSTOM_DATA = {
 def clear_bs_widget_state():
     """
     လက်ရှိ Balance Sheet ကာလ၏ Widget State များကို ရှင်းခြင်း။
-
-    Date Widget နှင့် History Selector ကို မဖျက်ပါ။
+    Period နှင့် History Control State များကို မဖျက်ပါ။
     """
+
+    preserve_keys = {
+        "bs_date_input",
+        "bs_history_selector",
+        "bs_history_applied",
+        "bs_target_period",
+        "bs_loaded_period",
+        "bs_date",
+    }
 
     for key in list(st.session_state.keys()):
 
-        if key in {
-            "bs_date_input",
-            "bs_history_selector",
-        }:
+        if key in preserve_keys:
             continue
 
         if key.startswith("bs_") or key.startswith("show_bs_"):
             del st.session_state[key]
-
 
 def decode_db_json(value, default):
     """Database မှ JSON string သို့မဟုတ် Python object ကို ဖတ်ခြင်း။"""
@@ -352,35 +356,49 @@ with col_hist:
         )
 
         # History ရွေးချယ်မှု ပြောင်းလဲသွားပါက
+        # History ရွေးချယ်မှု ပြောင်းလဲသွားပါက
         if (
             selected_history != "-- ကာလအသစ် (New) --"
             and st.session_state.get("bs_history_applied")
             != selected_history
         ):
 
-            # Date Widget မဖန်တီးမီ Value ပြောင်းမည်။
-            st.session_state.bs_date_input = date.fromisoformat(
-                selected_history
-            )
-
-            st.session_state.bs_date = selected_history
-
-            clear_bs_widget_state()
-
             st.session_state.bs_history_applied = selected_history
 
+            # နောက်တစ်ကြိမ် rerun မှာ Date Widget မဖန်တီးမီ
+            # ရွေးထားတဲ့ကာလကို သတ်မှတ်မည်။
+            st.session_state.bs_target_period = selected_history
+
+            # ကာလဟောင်းကို ပြန် Load လုပ်ရန်
+            st.session_state.pop("bs_loaded_period", None)
+
+            st.rerun()
             # ကာလဟောင်းကို နောက်တစ်ကြိမ် Load လုပ်ရန်
             st.session_state.pop("bs_loaded_period", None)
 
             st.rerun()
 
         elif selected_history == "-- ကာလအသစ် (New) --":
-
             st.session_state.pop("bs_history_applied", None)
 
     else:
         st.info("သိမ်းထားသော စာရင်း မရှိသေးပါ။")
 
+# ============================================================
+# APPLY TARGET PERIOD BEFORE DATE WIDGET
+# ============================================================
+
+target_period = st.session_state.pop("bs_target_period", None)
+
+if target_period:
+    try:
+        target_date = date.fromisoformat(str(target_period)[:10])
+
+        st.session_state.bs_date = target_date.isoformat()
+        st.session_state.bs_date_input = target_date
+
+    except (TypeError, ValueError):
+        st.warning("Invalid target period. Using today's date.")
 
 # ------------------------------------------------------------
 # DATE INPUT

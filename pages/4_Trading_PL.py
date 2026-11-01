@@ -356,23 +356,15 @@ with col_hist:
 
 
 # History selection takes priority over the date input.
+# History selection takes priority over the date input.
 if selected_history != "-- ကာလအသစ် (New) --":
 
     if st.session_state.get("selected_history_period") != selected_history:
 
         st.session_state.selected_history_period = selected_history
 
-        selected_period = selected_history
-
-        selected_date = date.fromisoformat(selected_history)
-
-        # Update date widget before its next rendering.
-        st.session_state.tpl_period_input = selected_date
-
-        st.session_state.tpl_period = selected_history
-
-        # Force loading the selected historical record.
-        load_tpl_record(selected_history)
+        # Set target period for the next rerun.
+        st.session_state.target_period = selected_history
 
         st.rerun()
 
@@ -383,13 +375,11 @@ else:
 
     st.session_state.tpl_period = selected_period
 
-
 # ============================================================
 # LOAD EXACT PERIOD
 # ============================================================
 
 if st.session_state.get("tpl_loaded_period") != selected_period:
-
     load_tpl_record(selected_period)
 
 
