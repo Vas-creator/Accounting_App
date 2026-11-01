@@ -1007,58 +1007,20 @@ with col3:
     diff_color = "#2e7d32" if is_balanced else "#c62828"
 
     st.markdown(
-        f"""
-        <div style="background-color: #f5f5f5; padding: 1rem;
-                    border-radius: 8px;">
-            <p style="margin: 0 0 0.5rem 0; font-size: 0.85rem;
-                      color: #666; font-weight: bold;">
-                📊 {'အသေးစိတ်' if st.session_state.get('language') == 'my' else 'Breakdown'}
-            </p>
-
-            <table style="width: 100%; font-size: 0.9rem;">
-                <tr>
-                    <td>{'ပိုင်ဆိုင်မှု' if st.session_state.get('language') == 'my' else 'Assets'}</td>
-                    <td style="text-align: right; font-weight: bold;">
-                        {format_number(total_assets)}
-                    </td>
-                </tr>
-
-                <tr>
-                    <td>{'အရင်း' if st.session_state.get('language') == 'my' else 'Equity'}</td>
-                    <td style="text-align: right; font-weight: bold;">
-                        {format_number(total_equity)}
-                    </td>
-                </tr>
-
-                <tr>
-                    <td>{'အကြွေး' if st.session_state.get('language') == 'my' else 'Liabilities'}</td>
-                    <td style="text-align: right; font-weight: bold;">
-                        {format_number(total_liab)}
-                    </td>
-                </tr>
-
-                <tr style="border-top: 1px solid #ddd;">
-                    <td>
-                        <b>{'အရင်း + အကြွေး' if st.session_state.get('language') == 'my' else 'Equity + Liab'}</b>
-                    </td>
-                    <td style="text-align: right; font-weight: bold; color: #c2185b;">
-                        {format_number(total_eq_liab)}
-                    </td>
-                </tr>
-
-                <tr style="border-top: 2px solid {diff_color};">
-                    <td>
-                        <b>{'ကွာဟမှု' if st.session_state.get('language') == 'my' else 'Difference'}</b>
-                    </td>
-                    <td style="text-align: right; font-weight: bold; color: {diff_color};">
-                        {format_number(difference)}
-                    </td>
-                </tr>
-            </table>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+            f"""
+            <div style="background-color: #f5f5f5; padding: 1rem; border-radius: 8px;">
+                <p style="margin: 0 0 0.5rem 0; font-size: 0.85rem; color: #666; font-weight: bold;">📊 {'အသေးစိတ်' if st.session_state.get('language') == 'my' else 'Breakdown'}</p>
+                <table style="width: 100%; font-size: 0.9rem;">
+                    <tr><td>{'ပိုင်ဆိုင်မှု' if st.session_state.get('language') == 'my' else 'Assets'}</td><td style="text-align: right; font-weight: bold;">{format_number(total_assets)}</td></tr>
+                    <tr><td>{'အရင်း' if st.session_state.get('language') == 'my' else 'Equity'}</td><td style="text-align: right; font-weight: bold;">{format_number(total_equity)}</td></tr>
+                    <tr><td>{'အကြွေး' if st.session_state.get('language') == 'my' else 'Liabilities'}</td><td style="text-align: right; font-weight: bold;">{format_number(total_liab)}</td></tr>
+                    <tr style="border-top: 1px solid #ddd;"><td><b>{'အရင်း + အကြွေး' if st.session_state.get('language') == 'my' else 'Equity + Liab'}</b></td><td style="text-align: right; font-weight: bold; color: #c2185b;">{format_number(total_eq_liab)}</td></tr>
+                    <tr style="border-top: 2px solid {diff_color};"><td><b>{'ကွာဟမှု' if st.session_state.get('language') == 'my' else 'Difference'}</b></td><td style="text-align: right; font-weight: bold; color: {diff_color};">{format_number(difference)}</td></tr>
+                </table>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
     # PDF နှင့် Cash Flow အတွက် အသုံးပြုမည့် Summary Data များ
     st.session_state.bs_data["_total_assets"] = total_assets
