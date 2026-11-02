@@ -1,4 +1,5 @@
 
+from altair import value
 import streamlit as st
 import json
 from datetime import date
@@ -225,7 +226,6 @@ if "tpl_period_input" not in st.session_state:
     except (TypeError, ValueError):
         st.session_state.tpl_period_input = date.today()
 
-
 # ============================================================
 # HISTORY DATA
 # ============================================================
@@ -295,7 +295,6 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-
 # ============================================================
 # HEADER
 # ============================================================
@@ -316,6 +315,16 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# Apply selected history period to date input
+if "target_period" in st.session_state:
+    try:
+        st.session_state.tpl_period_input = date.fromisoformat(
+            st.session_state.target_period
+        )
+    except (TypeError, ValueError):
+        pass
+
+    st.session_state.pop("target_period", None)
 
 # ============================================================
 # PERIOD & HISTORY
@@ -381,7 +390,6 @@ else:
 
 if st.session_state.get("tpl_loaded_period") != selected_period:
     load_tpl_record(selected_period)
-
 
 # ============================================================
 # INITIAL SHOW / HIDE STATE
@@ -503,7 +511,7 @@ def num_input(
                 min_value=0,
                 step=1000,
                 format="%d",
-                key=f"tpl_{key}",
+                key=f"tpl_{key}_{st.session_state.tpl_loaded_period}",
             )
 
             st.session_state.tpl_data[key] = result
@@ -547,6 +555,8 @@ def render_custom_items(section_key: str, title: str):
 
     items = st.session_state.custom_data.get(section_key, [])
 
+    period = st.session_state.tpl_loaded_period
+
     for i, item in enumerate(items):
 
         col_x, col_y, col_z = st.columns([2, 2, 1])
@@ -556,7 +566,7 @@ def render_custom_items(section_key: str, title: str):
             item["label"] = st.text_input(
                 "Name",
                 value=item.get("label", ""),
-                key=f"{section_key}_label_{i}",
+                key=f"{section_key}_label_{period}_{i}",
                 label_visibility="collapsed",
             )
 
@@ -567,13 +577,16 @@ def render_custom_items(section_key: str, title: str):
                 value=int(item.get("value", 0)),
                 step=1000,
                 format="%d",
-                key=f"{section_key}_value_{i}",
+                key=f"{section_key}_value_{period}_{i}",
                 label_visibility="collapsed",
             )
 
         with col_z:
 
-            if st.button("🗑️", key=f"{section_key}_del_{i}"):
+            if st.button(
+                "🗑️",
+                key=f"{section_key}_del_{period}_{i}",
+            ):
 
                 items.pop(i)
 
@@ -583,7 +596,7 @@ def render_custom_items(section_key: str, title: str):
 
     if st.button(
         f"➕ {'Item ထည့်' if st.session_state.get('language') == 'my' else 'Add Item'}",
-        key=f"add_{section_key}",
+        key=f"add_{section_key}_{period}",
     ):
 
         items.append({
@@ -620,7 +633,7 @@ def render_cost_custom_items(section_key: str, title: str):
     items = st.session_state.tpl_cost_custom.get(
         section_key, []
     )
-
+    period = st.session_state.tpl_loaded_period
     for i, item in enumerate(items):
 
         col_x, col_y, col_z = st.columns([2, 2, 1])
@@ -630,7 +643,7 @@ def render_cost_custom_items(section_key: str, title: str):
             item["label"] = st.text_input(
                 "Name",
                 value=item.get("label", ""),
-                key=f"tpl_cost_{section_key}_label_{i}",
+                key=f"tpl_cost_{section_key}_label_{period}_{i}",
                 label_visibility="collapsed",
             )
 
@@ -641,7 +654,7 @@ def render_cost_custom_items(section_key: str, title: str):
                 value=int(item.get("value", 0)),
                 step=1000,
                 format="%d",
-                key=f"tpl_cost_{section_key}_value_{i}",
+                key=f"tpl_cost_{section_key}_value_{period}_{i}",
                 label_visibility="collapsed",
             )
 
@@ -649,7 +662,7 @@ def render_cost_custom_items(section_key: str, title: str):
 
             if st.button(
                 "🗑️",
-                key=f"tpl_cost_{section_key}_del_{i}",
+                key=f"tpl_cost_{section_key}_del_{period}_{i}",
             ):
 
                 items.pop(i)
@@ -660,7 +673,7 @@ def render_cost_custom_items(section_key: str, title: str):
 
     if st.button(
         f"➕ {'Item ထည့်' if st.session_state.get('language') == 'my' else 'Add Item'}",
-        key=f"tpl_cost_add_{section_key}",
+        key=f"tpl_cost_add_{section_key}_{period}",
     ):
 
         items.append({
@@ -761,6 +774,13 @@ with col1:
         key="tpl_mfg_direct_material",
     )
 
+    st.write(
+        "DEBUG MFG:",
+        "DATA:", st.session_state.tpl_data.get("mfg_direct_material"),
+        "RESULT:", mfg_direct_material,
+        "SESSION:", st.session_state.get("tpl_mfg_direct_material")
+    )
+
     st.session_state.tpl_data["mfg_direct_material"] = mfg_direct_material
 
     mfg_direct_labour = st.number_input(
@@ -769,7 +789,7 @@ with col1:
         min_value=0,
         step=1000,
         format="%d",
-        key="tpl_mfg_direct_labour",
+       key=f"tpl_mfg_direct_labour_{st.session_state.tpl_loaded_period}",
     )
 
     st.session_state.tpl_data["mfg_direct_labour"] = mfg_direct_labour
@@ -780,7 +800,7 @@ with col1:
         min_value=0,
         step=1000,
         format="%d",
-        key="tpl_mfg_direct_overhead",
+        key=f"tpl_mfg_direct_overhead_{st.session_state.tpl_loaded_period}",
     )
 
     st.session_state.tpl_data["mfg_direct_overhead"] = mfg_direct_overhead
@@ -800,7 +820,7 @@ with col1:
         min_value=0,
         step=1000,
         format="%d",
-        key="cs_opening",
+        key=f"cs_opening_{st.session_state.tpl_loaded_period}",
     )
 
     st.session_state.tpl_data["opening_stock_finished"] = cs_opening
@@ -819,7 +839,14 @@ with col1:
         min_value=0,
         step=1000,
         format="%d",
-        key="cs_purchases",
+        key=f"cs_purchases_{st.session_state.tpl_loaded_period}",
+    )
+
+    st.write(
+        "DEBUG MFG:",
+        "DATA:", st.session_state.tpl_data.get("mfg_direct_material"),
+        "RESULT:", mfg_direct_material,
+        "SESSION:", st.session_state.get("tpl_mfg_direct_material")
     )
 
     st.session_state.tpl_data["add_purchases"] = cs_purchases
@@ -851,7 +878,7 @@ with col1:
         min_value=0,
         step=1000,
         format="%d",
-        key="cs_closing",
+        key=f"cs_closing_{st.session_state.tpl_loaded_period}",
     )
 
     st.session_state.tpl_data["closing_stock_finished"] = cs_closing

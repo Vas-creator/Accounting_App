@@ -138,6 +138,7 @@ PDF_TRANSLATIONS = {
         
         "cf_fin_title": "ဃ။ ငွေကြေးရှာဖွေမှု လုပ်ဆောင်ချက်များမှ ငွေသား",
         "cf_fin_draw": "ပိုင်ရှင် ထုတ်ယူမှု (Drawing)",
+        "cf_fin_loan": "ချေးငွေ တိုးလာမှု (Increase in Loan)",
         "cf_net_financing": "ငွေကြေးရှာဖွေမှုမှ ထွက်သွားသော ငွေသား (Net)",
         
         "cf_summary_title": "ငွေသား အကျဉ်းချုပ်",
@@ -801,6 +802,7 @@ def _render_trading_pl_html(t: Dict[str, Any], lang: str, data: Dict[str, Any]) 
 
     # Template ထဲက Expense items တွေကို တိုက်ရိုက်ဖတ်မယ်။
     # ဒီနည်းနဲ့ depreciation_office အပါအဝင် Template ထဲက Expense အားလုံး ပေါ်လာမယ်။
+    # Built-in Expenses
     expense_items = t["profit_loss"]["expenses"]["items"]
 
     for key, item in expense_items.items():
@@ -814,24 +816,35 @@ def _render_trading_pl_html(t: Dict[str, Any], lang: str, data: Dict[str, Any]) 
                     else item.get("label_en", key)
                 )
 
+                if key.startswith("dep_"):
+                    display_value = f"({format_number(abs(val))})"
+                elif val < 0:
+                    display_value = f"({format_number(abs(val))})"
+                else:
+                    display_value = format_number(val)
+
                 html += _build_row_5(
                     get_sr(),
                     label,
                     "",
-                    format_number(abs(val)),
+                    display_value,
                     ""
                 )
-
     # Custom Expenses
     for item in custom_data.get("expenses", []):
         val = parse_number(item.get("value", 0))
 
         if item.get("label") and val != 0:
+            if val < 0:
+                display_value = f"({format_number(abs(val))})"
+            else:
+                display_value = format_number(val)
+
             html += _build_row_5(
                 get_sr(),
                 item["label"],
                 "",
-                format_number(abs(val)),
+                display_value,
                 ""
             )
 
@@ -1046,13 +1059,34 @@ def _render_cash_flow_html(data: Dict[str, Any], lang: str) -> str:
 
     # --- D. FINANCING ACTIVITIES ---
     html += f'<tr class="section-header"><td colspan="3">{get_pdf_text(lang, "cf_fin_title")}</td></tr>'
+
+    fin_loan = parse_number(data.get("financing_increase_loan", 0))
+    if fin_loan != 0:
+        html += _build_html_row(
+            get_sr(),
+            get_pdf_text(lang, "cf_fin_loan"),
+            fin_loan,
+            is_deduction=(fin_loan < 0)
+        )
+
     fin_draw = parse_number(data.get("financing_drawing", 0))
     if fin_draw != 0:
-        html += _build_html_row(get_sr(), get_pdf_text(lang, "cf_fin_draw"), fin_draw, is_deduction=(fin_draw < 0))
-    
-    net_financing = fin_draw
-    html += _build_html_row("", get_pdf_text(lang, "cf_net_financing"), net_financing, is_total=True, is_deduction=(net_financing < 0))
+        html += _build_html_row(
+            get_sr(),
+            get_pdf_text(lang, "cf_fin_draw"),
+            fin_draw,
+            is_deduction=(fin_draw < 0)
+        )
 
+    net_financing = fin_loan + fin_draw
+
+    html += _build_html_row(
+        "",
+        get_pdf_text(lang, "cf_net_financing"),
+        net_financing,
+        is_total=True,
+        is_deduction=(net_financing < 0)
+    )
     # --- CASH SUMMARY ---
     html += f'<tr class="section-header"><td colspan="3">{get_pdf_text(lang, "cf_summary_title")}</td></tr>'
     

@@ -210,22 +210,61 @@ TRADING_PL_TEMPLATE: Dict[str, Any] = {
             "label_mm": "အသုံးစရိတ်များ",
             "label_en": "Expenses",
             "items": {
-                "office_salary":     {"label_mm": "ရုံး ဝန်ထမ်းခ",          "label_en": "Office Salaries",           "value": 0.0},
-                "office_rent":       {"label_mm": "ရုံး ငှားရမ်းခ",          "label_en": "Office Rent",               "value": 0.0},
-                "office_rates":      {"label_mm": "ရုံး အခွန်",              "label_en": "Office Rates & Taxes",      "value": 0.0},
-                "office_insurance":  {"label_mm": "ရုံး အာမခံ",              "label_en": "Office Insurance",          "value": 0.0},
-                "office_power":      {"label_mm": "ရုံး လျှပ်စစ်နှင့်ရေ",    "label_en": "Office Power & Water",      "value": 0.0},
-                "printing_stationery":{"label_mm": "စာရေးကိရိယာ",           "label_en": "Printing & Stationery",     "value": 0.0},
-                "postage_telephone": {"label_mm": "စာပို့နှင့် တယ်လီဖုန်း",  "label_en": "Postage & Telephone",       "value": 0.0},
-                "travel_conveyance": {"label_mm": "ခရီးသွား စရိတ်",         "label_en": "Travel & Conveyance",       "value": 0.0},
-                "advertisement":     {"label_mm": "ကြော်ငြာ စရိတ်",         "label_en": "Advertisement",             "value": 0.0},
-                "legal_professional":{"label_mm": "ဥပဒေ အကြံပေးခ",         "label_en": "Legal & Professional Fees", "value": 0.0},
-                "audit_fees":        {"label_mm": "စာရင်းစစ် ကြေး",         "label_en": "Audit Fees",                "value": 0.0},
-                "bank_charges":      {"label_mm": "ဘဏ် ဝန်ဆောင်ခ",          "label_en": "Bank Charges",              "value": 0.0},
-                "interest_paid":     {"label_mm": "အတိုး ပေးရမှု",           "label_en": "Interest Paid",             "value": 0.0},
-                "depreciation_office":{"label_mm": "ရုံးပစ္စည်း တန်ဖိုးကျဆင်း","label_en": "Depreciation - Office",   "value": 0.0},
-                "bad_debts":         {"label_mm": "မရရှိသော အကြွေး",        "label_en": "Bad Debts Written Off",     "value": 0.0},
-                "misc_expenses":     {"label_mm": "အထွေထွေ စရိတ်",          "label_en": "Miscellaneous Expenses",    "value": 0.0},
+                "staff_salary": {
+                    "label_mm": "ရုံး ဝန်ထမ်းခ",
+                    "label_en": "Office Salaries",
+                    "value": 0.0
+                },
+                "tax_other": {
+                    "label_mm": "ရုံး အခွန်",
+                    "label_en": "Office Rates & Taxes",
+                    "value": 0.0
+                },
+                "electricity": {
+                    "label_mm": "ရုံး လျှပ်စစ်နှင့်ရေ",
+                    "label_en": "Office Power & Water",
+                    "value": 0.0
+                },
+                "telephone": {
+                    "label_mm": "စာပို့နှင့် တယ်လီဖုန်း",
+                    "label_en": "Postage & Telephone",
+                    "value": 0.0
+                },
+                "fuel": {
+                    "label_mm": "လောင်စာ",
+                    "label_en": "Fuel",
+                    "value": 0.0
+                },
+                "repair_maintenance": {
+                    "label_mm": "ပြုပြင်ထိန်းသိမ်းမှု",
+                    "label_en": "Maintenance & Repairs",
+                    "value": 0.0
+                },
+                "dep_vehicle": {
+                    "label_mm": "ယာဉ်",
+                    "label_en": "Depreciation - Vehicle",
+                    "value": 0.0
+                },
+                "dep_furniture": {
+                    "label_mm": "ပရိဘောဂ",
+                    "label_en": "Depreciation - Furniture",
+                    "value": 0.0
+                },
+                "dep_machine": {
+                    "label_mm": "စက်ပစ္စည်း",
+                    "label_en": "Depreciation - Machine",
+                    "value": 0.0
+                },
+                "dep_building": {
+                    "label_mm": "အဆောက်အအုံ",
+                    "label_en": "Depreciation - Office Buildings",
+                    "value": 0.0
+                },
+                "general_expenses": {
+                    "label_mm": "အထွေထွေ စရိတ်",
+                    "label_en": "Miscellaneous Expenses",
+                    "value": 0.0
+                },
             },
             "subtotal_key": "expenses_total",
             "subtotal_mm": "အသုံးစရိတ် စုစုပေါင်း",

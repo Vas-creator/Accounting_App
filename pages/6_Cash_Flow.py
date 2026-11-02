@@ -440,6 +440,7 @@ defaults = {
     "change_prepayment": 0,
     "investing_purchase_fa": 0,
     "financing_drawing": 0,
+    "financing_increase_loan": 0,
 }
 
 for key, value in defaults.items():
@@ -724,9 +725,20 @@ with col3:
         format="%d",
         key="cf_finance_draw",
     )
+
+    finance_loan = st.number_input(
+        "Increase in Loan"
+        if st.session_state.get("language") == "en"
+        else "ချေးငွေ တိုးလာမှု (Increase in Loan)",
+        value=int(cf.get("financing_increase_loan", 0)),
+        step=1000,
+        format="%d",
+        key="cf_finance_loan",
+    )
+    cf["financing_increase_loan"] = finance_loan
     cf["financing_drawing"] = finance_draw
 
-    net_financing = finance_draw
+    net_financing = finance_draw + finance_loan
 
     st.markdown(
         f"""
