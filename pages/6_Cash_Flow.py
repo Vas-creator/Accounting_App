@@ -1,12 +1,12 @@
-
 """
 Cash Flow Statement — ငွေသား စီးဆင်းမှု ရှင်းတမ်း
 Indirect Method
 """
 
-import streamlit as st
 import json
 from datetime import date
+
+import streamlit as st
 
 from core import db
 from core.utils import format_number, format_date_mm, play_click_sound
@@ -14,26 +14,20 @@ from core.pdf_generator import generate_pdf
 from core.translations import t
 
 
-# ============================================================
-# PAGE CONFIG
-# ============================================================
-
 st.set_page_config(
     page_title="Cash Flow Statement",
     page_icon="💵",
     layout="wide",
 )
 
+NEW_PERIOD_LABEL = "-- ကာလအသစ် (New) --"
+
 
 # ============================================================
 # HELPERS
 # ============================================================
 
-NEW_PERIOD_LABEL = "-- ကာလအသစ် (New) --"
-
-
 def parse_json_data(raw_data):
-    """JSON string သို့မဟုတ် dict ကို လုံခြုံစွာ dict ပြောင်းပေးရန်။"""
     if isinstance(raw_data, dict):
         return raw_data.copy()
 
@@ -47,44 +41,6 @@ def parse_json_data(raw_data):
     return {}
 
 
-def clear_cf_widget_state(keep_period=True):
-    """
-    ကာလပြောင်းသည့်အခါ input widget အဟောင်းများကို ရှင်းရန်။
-    Period input နှင့် history selector ကို မရှင်းပါ။
-    """
-    protected_keys = {
-        "cf_period_input",
-        "cf_history_selector",
-        "selected_cf_history",
-    }
-
-    for key in list(st.session_state.keys()):
-        if key.startswith("cf_") and key not in protected_keys:
-            del st.session_state[key]
-
-
-def load_cf_period(period_string):
-    """ရွေးထားသော period အတွက် Cash Flow row ကိုသာ load လုပ်ရန်။"""
-    clear_cf_widget_state()
-
-    st.session_state.cf_period = period_string
-
-    existing = db.get_statement(
-        client_id,
-        "cash_flow",
-        period_end=period_string,
-    )
-
-    if existing:
-        st.session_state.cf_data = parse_json_data(
-            existing.get("data")
-        )
-    else:
-        st.session_state.cf_data = {}
-
-    st.session_state._cf_loaded_period = period_string
-
-
 def safe_number(value):
     try:
         return float(value or 0)
@@ -92,8 +48,78 @@ def safe_number(value):
         return 0.0
 
 
+def clear_cf_widget_state():
+    """Period selector များကို ချန်ပြီး Cash Flow widget state များရှင်းရန်။"""
+    protected = {
+        "cf_period_input",
+        "cf_history_selector",
+        "selected_cf_history",
+    }
+    for key in list(st.session_state.keys()):
+        if key.startswith("cf_") and key not in protected:
+            del st.session_state[key]
+
+
+def make_widget_key(client_id, period_string, field):
+    """Client/Period/Field တစ်ခုစီအတွက် သီးခြား widget key။"""
+    return f"cf_input_{client_id}_{period_string}_{field}"
+
+
+def cf_number_input(
+    label,
+    data,
+    field,
+    client_id,
+    period_string,
+    default=0,
+    min_value=None,
+    step=1000,
+):
+    """
+    Widget state ကို ပထမဆုံးအကြိမ် data မှ initialize လုပ်သည်။
+    st.number_input တွင် value= နှင့် key= ကို တွဲမသုံးပါ။
+    """
+    key = make_widget_key(client_id, period_string, field)
+
+    if key not in st.session_state:
+        try:
+            st.session_state[key] = int(data.get(field, default) or 0)
+        except (ValueError, TypeError, OverflowError):
+            st.session_state[key] = int(default or 0)
+
+    kwargs = {
+        "label": label,
+        "key": key,
+        "step": step,
+        "format": "%d",
+    }
+    if min_value is not None:
+        kwargs["min_value"] = min_value
+
+    return st.number_input(**kwargs)
+
+
+def load_cf_period(period_string, client_id):
+    """ရွေးထားသော Client နှင့် Period အတွက် data ကို DB မှ load လုပ်ရန်။"""
+    clear_cf_widget_state()
+
+    existing = db.get_statement(
+        client_id,
+        "cash_flow",
+        period_end=period_string,
+    )
+
+    st.session_state["cf_data"] = (
+        parse_json_data(existing.get("data"))
+        if existing
+        else {}
+    )
+    st.session_state["cf_period"] = period_string
+    st.session_state["_cf_loaded_period"] = period_string
+
+
 # ============================================================
-# AUTH + CLIENT CHECK
+# AUTHENTICATION + CLIENT
 # ============================================================
 
 if not st.session_state.get("authentication_status"):
@@ -105,7 +131,6 @@ if not st.session_state.get("authentication_status"):
     st.switch_page("app.py")
     st.stop()
 
-
 client_id = st.session_state.get("selected_client_id")
 
 if not client_id:
@@ -114,23 +139,19 @@ if not client_id:
         if st.session_state.get("language", "my") == "my"
         else "⚠️ No client selected"
     )
-
     if st.button(
         "← ဖောက်သည် စာရင်းသို့ ပြန်"
         if st.session_state.get("language", "my") == "my"
         else "← Back to Clients"
     ):
         st.switch_page("pages/1_Clients.py")
-
     st.stop()
-
 
 try:
     client = db.get_client(client_id)
 except Exception as e:
     st.error(f"❌ Database error: {e}")
     st.stop()
-
 
 if not client:
     st.error(
@@ -140,52 +161,44 @@ if not client:
     )
     st.stop()
 
+language = st.session_state.get("language", "my")
+is_english = language == "en"
+
 
 # ============================================================
-# SESSION STATE — CLIENT CHANGE
+# CLIENT SESSION INITIALIZATION
 # ============================================================
 
 if st.session_state.get("current_cf_client_id") != client_id:
-
-    for key in list(st.session_state.keys()):
-        if key.startswith("cf_") or key.startswith("_cf_"):
-            del st.session_state[key]
-
-    st.session_state.current_cf_client_id = client_id
-    st.session_state.cf_period = str(date.today())
-
-
-# ============================================================
-# TARGET PERIOD
-# ============================================================
+    clear_cf_widget_state()
+    st.session_state["current_cf_client_id"] = client_id
+    st.session_state["cf_period"] = str(date.today())
+    st.session_state["cf_data"] = {}
+    st.session_state.pop("_cf_loaded_period", None)
 
 target_period = st.session_state.pop("target_period", None)
-
 if target_period:
     try:
         target_period = str(date.fromisoformat(str(target_period)))
-        st.session_state.cf_period = target_period
-        st.session_state.cf_period_input = date.fromisoformat(target_period)
+        st.session_state["cf_period"] = target_period
+        st.session_state["cf_period_input"] = date.fromisoformat(target_period)
         st.session_state.pop("_cf_loaded_period", None)
     except (ValueError, TypeError):
         pass
 
-
 if "cf_period" not in st.session_state:
-    st.session_state.cf_period = str(date.today())
+    st.session_state["cf_period"] = str(date.today())
 
 
 # ============================================================
 # HISTORY
 # ============================================================
 
-history = []
-
 try:
     history = db.get_statement_history(client_id, "cash_flow") or []
-except Exception:
+except Exception as e:
+    st.error(f"History load error: {e}")
     history = []
-
 
 history_periods = sorted(
     {
@@ -202,7 +215,6 @@ history_periods = sorted(
 # ============================================================
 
 with st.sidebar:
-
     st.markdown(
         f"""
         <div style="text-align: center; padding: 0.5rem 0;">
@@ -213,26 +225,22 @@ with st.sidebar:
         """,
         unsafe_allow_html=True,
     )
-
     st.divider()
 
     if st.button(t("home"), use_container_width=True):
         st.switch_page("app.py")
-
     if st.button(t("clients"), use_container_width=True):
         st.switch_page("pages/1_Clients.py")
-
     if st.button(t("detail"), use_container_width=True):
         st.switch_page("pages/2_Client_Detail.py")
 
     st.divider()
-
     st.markdown(
         f"""
         <div style="background-color: #e3f2fd; padding: 0.8rem;
                     border-radius: 8px; border-left: 4px solid #1565c0;">
             <p style="margin: 0; font-size: 0.85rem; color: #666;">
-                {'ဖောက်သည်' if st.session_state.get('language', 'my') == 'my' else 'Client'}
+                {'ဖောက်သည်' if language == 'my' else 'Client'}
             </p>
             <p style="margin: 0.2rem 0 0 0; font-weight: bold; color: #1565c0;">
                 👤 {client['name']}
@@ -252,9 +260,7 @@ st.markdown(
     <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                 padding: 1.2rem 1.5rem; border-radius: 12px;
                 color: white; margin-bottom: 1.5rem;">
-        <h1 style="margin: 0; font-size: 1.8rem;">
-            💵 {t('pdf_cashflow')}
-        </h1>
+        <h1 style="margin: 0; font-size: 1.8rem;">💵 {t('pdf_cashflow')}</h1>
         <p style="margin: 0.5rem 0 0 0; font-size: 0.95rem; opacity: 0.95;">
             Cash Flow Statement — {client['name']}
         </p>
@@ -265,22 +271,17 @@ st.markdown(
 
 
 # ============================================================
-# PERIOD & HISTORY SELECTION
+# PERIOD + HISTORY SELECTORS
 # ============================================================
 
 col_date, col_hist = st.columns([1, 1])
 
 with col_hist:
-
     if history_periods:
-
         st.markdown("**📜 သိမ်းထားသော ကာလများ (History)**")
-
-        history_options = [NEW_PERIOD_LABEL] + history_periods
-
         selected_history = st.selectbox(
             "ကာလဟောင်း ပြန်ကြည့်ရန်",
-            options=history_options,
+            options=[NEW_PERIOD_LABEL] + history_periods,
             key="cf_history_selector",
             label_visibility="collapsed",
         )
@@ -291,126 +292,92 @@ with col_hist:
         )
 
         if selected_history != previous_history:
-
-            st.session_state.selected_cf_history = selected_history
+            st.session_state["selected_cf_history"] = selected_history
 
             if selected_history != NEW_PERIOD_LABEL:
-
                 selected_date = date.fromisoformat(selected_history)
-
-                st.session_state.cf_period_input = selected_date
-                st.session_state.cf_period = selected_history
-
-                load_cf_period(selected_history)
+                st.session_state["cf_period_input"] = selected_date
+                st.session_state["cf_period"] = selected_history
+                load_cf_period(selected_history, client_id)
                 st.rerun()
-
             else:
-                # New ကိုရွေးလိုက်လျှင် ယခင် data မသယ်သွားရန်
-                st.session_state.pop("_cf_loaded_period", None)
-
                 current_period = st.session_state.get(
                     "cf_period",
                     str(date.today()),
                 )
-
                 clear_cf_widget_state()
-                st.session_state.cf_period = current_period
-                st.session_state.cf_period_input = date.fromisoformat(
+                st.session_state["cf_data"] = {}
+                st.session_state["cf_period"] = current_period
+                st.session_state["cf_period_input"] = date.fromisoformat(
                     current_period
                 )
-
+                st.session_state.pop("_cf_loaded_period", None)
                 st.rerun()
-
     else:
         st.info("သိမ်းထားသော စာရင်း မရှိသေးပါ။")
 
-
 with col_date:
-
     try:
-        initial_date = date.fromisoformat(
-            st.session_state.cf_period
-        )
+        initial_date = date.fromisoformat(st.session_state["cf_period"])
     except (ValueError, TypeError):
         initial_date = date.today()
 
     if "cf_period_input" not in st.session_state:
-        st.session_state.cf_period_input = initial_date
+        st.session_state["cf_period_input"] = initial_date
 
     period_end = st.date_input(
         f"📅 {t('period_end')} (New/Update)",
         key="cf_period_input",
     )
-
     period_string = str(period_end)
 
 
 # ============================================================
-# LOAD DATA FOR SELECTED PERIOD
+# LOAD SELECTED PERIOD
 # ============================================================
 
-loaded_period = st.session_state.get("_cf_loaded_period")
-
-if loaded_period != period_string:
-
+if st.session_state.get("_cf_loaded_period") != period_string:
     try:
-        load_cf_period(period_string)
+        load_cf_period(period_string, client_id)
     except Exception as e:
         st.error(f"❌ Cash Flow load error: {e}")
         st.stop()
-
     st.rerun()
 
-
-st.session_state.cf_period = period_string
-
+st.session_state["cf_period"] = period_string
 if "cf_data" not in st.session_state:
-    st.session_state.cf_data = {}
+    st.session_state["cf_data"] = {}
 
 
 # ============================================================
-# AUTO DATA — SAME ACCOUNTING PERIOD ONLY
+# AUTO DATA — SAME PERIOD ONLY
 # ============================================================
 
 auto_net_profit = 0.0
 auto_depreciation = 0.0
 auto_bs = {}
 
-
-# Trading P&L
 try:
     tpl_existing = db.get_statement(
         client_id,
         "trading_pl",
         period_end=period_string,
     )
-
     if tpl_existing:
         tpl_data = parse_json_data(tpl_existing.get("data"))
-
-        auto_net_profit = safe_number(
-            tpl_data.get("_net_profit", 0)
-        )
-
-        auto_depreciation = safe_number(
-            tpl_data.get("_depreciation", 0)
-        )
-
+        auto_net_profit = safe_number(tpl_data.get("_net_profit", 0))
+        auto_depreciation = safe_number(tpl_data.get("_depreciation", 0))
 except Exception:
     pass
 
-
-# Balance Sheet
 try:
     bs_existing = db.get_statement(
         client_id,
         "balance_sheet",
         period_end=period_string,
     )
-
     if bs_existing:
         auto_bs = parse_json_data(bs_existing.get("data"))
-
 except Exception:
     auto_bs = {}
 
@@ -419,7 +386,7 @@ except Exception:
 # DEFAULT DATA
 # ============================================================
 
-cf = st.session_state.cf_data
+cf = st.session_state["cf_data"]
 
 defaults = {
     "opening_cash": 0,
@@ -442,89 +409,62 @@ defaults = {
     "financing_drawing": 0,
     "financing_increase_loan": 0,
 }
-
-for key, value in defaults.items():
-    if key not in cf:
-        cf[key] = value
+for field, default_value in defaults.items():
+    if field not in cf:
+        cf[field] = default_value
 
 
 # ============================================================
-# 3 COLUMNS LAYOUT
+# THREE-COLUMN LAYOUT
 # ============================================================
 
 col1, col2, col3 = st.columns(3)
 
 
-# ============================================================
 # COLUMN 1 — OPERATING ACTIVITIES
-# ============================================================
-
 with col1:
-
     st.markdown(
         f"""
         <h3 style="color: #1565c0; font-size: 1.1rem;
                    border-bottom: 2px solid #4facfe; padding-bottom: 0.3rem;">
-            {'A. OPERATING ACTIVITIES' if st.session_state.get('language') == 'en'
-             else 'က။ လုပ်ငန်း လည်ပတ်မှု လုပ်ဆောင်ချက်များမှ ငွေသား'}
+            {'A. OPERATING ACTIVITIES' if is_english else 'က။ လုပ်ငန်း လည်ပတ်မှု လုပ်ဆောင်ချက်များမှ ငွေသား'}
         </h3>
         """,
         unsafe_allow_html=True,
     )
 
-    net_profit = st.number_input(
-        "Net Profit/Loss before Taxation"
-        if st.session_state.get("language") == "en"
+    net_profit = cf_number_input(
+        "Net Profit/Loss before Taxation" if is_english
         else "အခွန်မဆိုင်မီ အသားတင် အမြတ်/အရှုံး",
-        value=int(cf.get("net_profit", auto_net_profit)),
+        cf, "net_profit", client_id, period_string,
+        default=int(auto_net_profit),
         min_value=-999999999999,
-        step=1000,
-        format="%d",
-        key="cf_net_profit",
     )
     cf["net_profit"] = net_profit
 
-    retain_change = st.number_input(
-        "Increase in Retain Earning"
-        if st.session_state.get("language") == "en"
-        else "စုဆောင်းအမြတ် တိုးလာမှု",
-        value=int(cf.get("retain_earning_change", 0)),
-        min_value=-999999999999,
-        step=1000,
-        format="%d",
-        key="cf_retain_change",
+    retain_change = cf_number_input(
+        "Increase in Retain Earning" if is_english else "စုဆောင်းအမြတ် တိုးလာမှု",
+        cf, "retain_earning_change", client_id, period_string,
     )
     cf["retain_earning_change"] = retain_change
 
-    amortization = st.number_input(
-        "Amortization"
-        if st.session_state.get("language") == "en"
-        else "တန်ဖိုးကျဆင်းမှု ဖြန့်ခွဲ (Amortization)",
-        value=int(cf.get("amortization", 0)),
+    amortization = cf_number_input(
+        "Amortization" if is_english else "တန်ဖိုးကျဆင်းမှု ဖြန့်ခွဲ (Amortization)",
+        cf, "amortization", client_id, period_string,
         min_value=0,
-        step=1000,
-        format="%d",
-        key="cf_amortization",
     )
     cf["amortization"] = amortization
 
-    depreciation = st.number_input(
-        "Depreciation"
-        if st.session_state.get("language") == "en"
-        else "တန်ဖိုးကျဆင်းမှု (Depreciation)",
-        value=int(cf.get("depreciation", auto_depreciation)),
+    depreciation = cf_number_input(
+        "Depreciation" if is_english else "တန်ဖိုးကျဆင်းမှု (Depreciation)",
+        cf, "depreciation", client_id, period_string,
+        default=int(auto_depreciation),
         min_value=0,
-        step=1000,
-        format="%d",
-        key="cf_depreciation",
     )
     cf["depreciation"] = depreciation
 
     op_before_wc = (
-        net_profit
-        + retain_change
-        + amortization
-        + depreciation
+        net_profit + retain_change + amortization + depreciation
     )
 
     st.markdown(
@@ -532,8 +472,7 @@ with col1:
         <div style="background-color: #e3f2fd; padding: 0.6rem;
                     border-radius: 6px; margin: 0.5rem 0;">
             <span style="color: #1565c0; font-weight: bold; font-size: 0.85rem;">
-                {'Operation Profit before WC' if st.session_state.get('language') == 'en'
-                 else 'လုပ်ငန်းလည်ပတ်မှု အမြတ် (WC မဆိုင်မီ)'}:
+                {'Operation Profit before WC' if is_english else 'လုပ်ငန်းလည်ပတ်မှု အမြတ် (WC မဆိုင်မီ)'}:
             </span>
             <span style="float: right; font-weight: bold; color: #1565c0;">
                 {format_number(op_before_wc)}
@@ -544,24 +483,19 @@ with col1:
     )
 
 
-# ============================================================
 # COLUMN 2 — WORKING CAPITAL CHANGES
-# ============================================================
-
 with col2:
-
     st.markdown(
         f"""
         <h3 style="color: #1976d2; font-size: 1.1rem;
                    border-bottom: 2px solid #4facfe; padding-bottom: 0.3rem;">
-            {'B. WORKING CAPITAL CHANGES' if st.session_state.get('language') == 'en'
-             else 'ခ။ လုပ်ငန်း အရင်းအနှီး ပြောင်းလဲမှုများ'}
+            {'B. WORKING CAPITAL CHANGES' if is_english else 'ခ။ လုပ်ငန်း အရင်းအနှီး ပြောင်းလဲမှုများ'}
         </h3>
         """,
         unsafe_allow_html=True,
     )
 
-    if st.session_state.get("language") == "my":
+    if not is_english:
         st.caption("➡️ Asset တိုးရင် (−)၊ လျော့ရင် (+)")
         st.caption("➡️ Liability တိုးရင် (+)၊ လျော့ရင် (−)")
     else:
@@ -570,47 +504,32 @@ with col2:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    change_inv = st.number_input(
+    change_inv = cf_number_input(
         "Increase/Decrease in Inventories",
-        value=int(cf.get("change_inventories", 0)),
-        step=1000,
-        format="%d",
-        key="cf_change_inv",
+        cf, "change_inventories", client_id, period_string,
     )
     cf["change_inventories"] = change_inv
 
-    change_rec = st.number_input(
+    change_rec = cf_number_input(
         "Increase/Decrease in A/C Receivable",
-        value=int(cf.get("change_receivable", 0)),
-        step=1000,
-        format="%d",
-        key="cf_change_rec",
+        cf, "change_receivable", client_id, period_string,
     )
     cf["change_receivable"] = change_rec
 
-    change_pay = st.number_input(
+    change_pay = cf_number_input(
         "Increase/Decrease in Creditors/A/P",
-        value=int(cf.get("change_payable", 0)),
-        step=1000,
-        format="%d",
-        key="cf_change_pay",
+        cf, "change_payable", client_id, period_string,
     )
     cf["change_payable"] = change_pay
 
-    change_prepay = st.number_input(
+    change_prepay = cf_number_input(
         "Increase/Decrease in Prepayment",
-        value=int(cf.get("change_prepayment", 0)),
-        step=1000,
-        format="%d",
-        key="cf_change_prepay",
+        cf, "change_prepayment", client_id, period_string,
     )
     cf["change_prepayment"] = change_prepay
 
     total_wc_change = (
-        change_inv
-        + change_rec
-        + change_pay
-        + change_prepay
+        change_inv + change_rec + change_pay + change_prepay
     )
 
     st.markdown(
@@ -618,8 +537,7 @@ with col2:
         <div style="background-color: #fce4ec; padding: 0.6rem;
                     border-radius: 6px; margin-top: 0.5rem;">
             <span style="color: #c2185b; font-weight: bold; font-size: 0.85rem;">
-                {'Cash used in / generated from operation' if st.session_state.get('language') == 'en'
-                 else 'လုပ်ငန်းလည်ပတ်မှုမှ ငွေသား (Net)'}:
+                {'Cash used in / generated from operation' if is_english else 'လုပ်ငန်းလည်ပတ်မှုမှ ငွေသား (Net)'}:
             </span>
             <span style="float: right; font-weight: bold; color: #c2185b;">
                 {format_number(total_wc_change)}
@@ -630,12 +548,8 @@ with col2:
     )
 
 
-# ============================================================
-# COLUMN 3 — NET CASH FROM OPERATION
-# ============================================================
-
+# COLUMN 3 — INVESTING, FINANCING AND CASH SUMMARY
 with col3:
-
     net_operating = op_before_wc + total_wc_change
 
     st.markdown(
@@ -644,8 +558,7 @@ with col3:
                     padding: 1.2rem; border-radius: 12px; color: white;
                     margin-bottom: 1rem;">
             <p style="margin: 0; font-size: 0.9rem; opacity: 0.95;">
-                💰 {'Net Cash from Operating' if st.session_state.get('language') == 'en'
-                 else 'လုပ်ငန်းလည်ပတ်မှုမှ ရရှိသော ငွေသား (Net)'}
+                💰 {'Net Cash from Operating' if is_english else 'လုပ်ငန်းလည်ပတ်မှုမှ ရရှိသော ငွေသား (Net)'}
             </p>
             <h2 style="margin: 0.4rem 0 0 0; font-size: 1.6rem;">
                 {format_number(net_operating)}
@@ -655,32 +568,21 @@ with col3:
         unsafe_allow_html=True,
     )
 
-    # --------------------------------------------------------
-    # C. INVESTING ACTIVITIES
-    # --------------------------------------------------------
-
     st.markdown(
         f"""
         <h4 style="color: #1976d2; font-size: 1rem;
                    border-bottom: 1px solid #4facfe; padding-bottom: 0.2rem;">
-            {'C. INVESTING ACTIVITIES' if st.session_state.get('language') == 'en'
-             else 'ဂ။ ရင်းနှီးမြှုပ်နှံမှု လုပ်ဆောင်ချက်များမှ ငွေသား'}
+            {'C. INVESTING ACTIVITIES' if is_english else 'ဂ။ ရင်းနှီးမြှုပ်နှံမှု လုပ်ဆောင်ချက်များမှ ငွေသား'}
         </h4>
         """,
         unsafe_allow_html=True,
     )
 
-    invest_fa = st.number_input(
-        "Purchase of Fixed Assets"
-        if st.session_state.get("language") == "en"
-        else "ပုံသေပိုင်ဆိုင်မှု ဝယ်ယူမှု",
-        value=int(cf.get("investing_purchase_fa", 0)),
-        step=1000,
-        format="%d",
-        key="cf_invest_fa",
+    invest_fa = cf_number_input(
+        "Purchase of Fixed Assets" if is_english else "ပုံသေပိုင်ဆိုင်မှု ဝယ်ယူမှု",
+        cf, "investing_purchase_fa", client_id, period_string,
     )
     cf["investing_purchase_fa"] = invest_fa
-
     net_investing = invest_fa
 
     st.markdown(
@@ -688,8 +590,7 @@ with col3:
         <div style="background-color: #e3f2fd; padding: 0.5rem;
                     border-radius: 6px; font-size: 0.85rem;">
             <span style="color: #1565c0; font-weight: bold;">
-                {'Net Cash from Investing:' if st.session_state.get('language') == 'en'
-                 else 'ရင်းနှီးမြှုပ်နှံမှုမှ ငွေသား (Net):'}
+                {'Net Cash from Investing:' if is_english else 'ရင်းနှီးမြှုပ်နှံမှုမှ ငွေသား (Net):'}
             </span>
             <span style="float: right; font-weight: bold; color: #1565c0;">
                 {format_number(net_investing)}
@@ -701,43 +602,27 @@ with col3:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # --------------------------------------------------------
-    # D. FINANCING ACTIVITIES
-    # --------------------------------------------------------
-
     st.markdown(
         f"""
         <h4 style="color: #1976d2; font-size: 1rem;
                    border-bottom: 1px solid #4facfe; padding-bottom: 0.2rem;">
-            {'D. FINANCING ACTIVITIES' if st.session_state.get('language') == 'en'
-             else 'ဃ။ ငွေကြေးရှာဖွေမှု လုပ်ဆောင်ချက်များမှ ငွေသား'}
+            {'D. FINANCING ACTIVITIES' if is_english else 'ဃ။ ငွေကြေးရှာဖွေမှု လုပ်ဆောင်ချက်များမှ ငွေသား'}
         </h4>
         """,
         unsafe_allow_html=True,
     )
 
-    finance_draw = st.number_input(
-        "Drawing"
-        if st.session_state.get("language") == "en"
-        else "ပိုင်ရှင် ထုတ်ယူမှု (Drawing)",
-        value=int(cf.get("financing_drawing", 0)),
-        step=1000,
-        format="%d",
-        key="cf_finance_draw",
+    finance_draw = cf_number_input(
+        "Drawing" if is_english else "ပိုင်ရှင် ထုတ်ယူမှု (Drawing)",
+        cf, "financing_drawing", client_id, period_string,
     )
-
-    finance_loan = st.number_input(
-        "Increase in Loan"
-        if st.session_state.get("language") == "en"
-        else "ချေးငွေ တိုးလာမှု (Increase in Loan)",
-        value=int(cf.get("financing_increase_loan", 0)),
-        step=1000,
-        format="%d",
-        key="cf_finance_loan",
-    )
-    cf["financing_increase_loan"] = finance_loan
     cf["financing_drawing"] = finance_draw
 
+    finance_loan = cf_number_input(
+        "Increase in Loan" if is_english else "ချေးငွေ တိုးလာမှု (Increase in Loan)",
+        cf, "financing_increase_loan", client_id, period_string,
+    )
+    cf["financing_increase_loan"] = finance_loan
     net_financing = finance_draw + finance_loan
 
     st.markdown(
@@ -745,8 +630,7 @@ with col3:
         <div style="background-color: #e3f2fd; padding: 0.5rem;
                     border-radius: 6px; font-size: 0.85rem;">
             <span style="color: #1565c0; font-weight: bold;">
-                {'Net Cash from Financing:' if st.session_state.get('language') == 'en'
-                 else 'ငွေကြေးရှာဖွေမှုမှ ငွေသား (Net):'}
+                {'Net Cash from Financing:' if is_english else 'ငွေကြေးရှာဖွေမှုမှ ငွေသား (Net):'}
             </span>
             <span style="float: right; font-weight: bold; color: #1565c0;">
                 {format_number(net_financing)}
@@ -758,32 +642,16 @@ with col3:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # --------------------------------------------------------
-    # CASH SUMMARY
-    # --------------------------------------------------------
+    net_change = net_operating + net_investing + net_financing
 
-    net_change = (
-        net_operating
-        + net_investing
-        + net_financing
-    )
-
-    opening_cash = st.number_input(
-        "Cash and Equivalents at beginning"
-        if st.session_state.get("language") == "en"
-        else "ကာလအစ ငွေသား",
-        value=int(cf.get("opening_cash", 0)),
-        step=1000,
-        format="%d",
-        key="cf_opening_cash",
+    opening_cash = cf_number_input(
+        "Cash and Equivalents at beginning" if is_english else "ကာလအစ ငွေသား",
+        cf, "opening_cash", client_id, period_string,
     )
     cf["opening_cash"] = opening_cash
 
     closing_cash_calc = opening_cash + net_change
-
-    auto_closing_cash = safe_number(
-        auto_bs.get("ca_cash", 0)
-    )
+    auto_closing_cash = safe_number(auto_bs.get("ca_cash", 0))
 
     st.markdown(
         f"""
@@ -791,24 +659,20 @@ with col3:
                     padding: 1rem; border-radius: 12px; color: white;
                     margin-top: 0.5rem;">
             <p style="margin: 0; font-size: 0.85rem; opacity: 0.95;">
-                {'Net Change in Cash' if st.session_state.get('language') == 'en'
-                 else 'ငွေသား ပြောင်းလဲမှု (Net)'}
+                {'Net Change in Cash' if is_english else 'ငွေသား ပြောင်းလဲမှု (Net)'}
             </p>
             <h3 style="margin: 0.3rem 0 0 0; font-size: 1.3rem;">
                 {format_number(net_change)}
             </h3>
             <hr style="margin: 0.5rem 0; border-color: rgba(255,255,255,0.3);">
             <p style="margin: 0; font-size: 0.8rem; opacity: 0.9;">
-                + {'Cash at Beginning' if st.session_state.get('language') == 'en'
-                   else 'ကာလအစ ငွေသား'}: {format_number(opening_cash)}
+                + {'Cash at Beginning' if is_english else 'ကာလအစ ငွေသား'}: {format_number(opening_cash)}
             </p>
             <p style="margin: 0.3rem 0 0 0; font-size: 0.9rem; font-weight: bold;">
-                = {'Cash at End' if st.session_state.get('language') == 'en'
-                   else 'ကာလအဆုံး ငွေသား'}: {format_number(closing_cash_calc)}
+                = {'Cash at End' if is_english else 'ကာလအဆုံး ငွေသား'}: {format_number(closing_cash_calc)}
             </p>
             <p style="margin: 0.5rem 0 0 0; font-size: 0.75rem; opacity: 0.85;">
-                {'Closing Cash from BS' if st.session_state.get('language') == 'en'
-                 else 'BS မှ Closing Cash'}: {format_number(auto_closing_cash)}
+                {'Closing Cash from BS' if is_english else 'BS မှ Closing Cash'}: {format_number(auto_closing_cash)}
             </p>
         </div>
         """,
@@ -826,19 +690,10 @@ st.divider()
 action_col1, action_col2, action_col3, action_col4 = st.columns(4)
 
 
-# ------------------------------------------------------------
 # SAVE
-# ------------------------------------------------------------
-
 with action_col1:
-
-    if st.button(
-        t("save"),
-        use_container_width=True,
-        type="primary",
-    ):
+    if st.button(t("save"), use_container_width=True, type="primary"):
         play_click_sound()
-
         try:
             cf["_net_operating"] = net_operating
             cf["_net_investing"] = net_investing
@@ -846,43 +701,29 @@ with action_col1:
             cf["_net_change"] = net_change
             cf["_closing_cash"] = closing_cash_calc
 
-            data_json = json.dumps(
-                cf,
-                ensure_ascii=False,
-            )
-
             db.save_statement(
                 client_id=client_id,
                 statement_type="cash_flow",
                 period_end=period_string,
-                data_json=data_json,
+                data_json=json.dumps(cf, ensure_ascii=False),
             )
 
             st.success(
                 "✓ သိမ်းပြီးပါပြီ"
-                if st.session_state.get("language") == "my"
+                if language == "my"
                 else "✓ Saved successfully"
             )
-
             st.balloons()
-
         except Exception as e:
             st.error(f"❌ Error: {e}")
 
 
-# ------------------------------------------------------------
 # PDF
-# ------------------------------------------------------------
-
 with action_col2:
-
     if st.button("📄 PDF", use_container_width=True):
-
         play_click_sound()
-
         try:
             pdf_data = dict(cf)
-
             pdf_data["change_inventories"] = change_inv
             pdf_data["change_receivable"] = change_rec
             pdf_data["change_payable"] = change_pay
@@ -896,50 +737,34 @@ with action_col2:
                 business_type=client.get("business_type", ""),
                 data=pdf_data,
                 period_end=period_string,
-                lang=st.session_state.get("language", "my"),
+                lang=language,
             )
 
             st.download_button(
                 "⬇️ PDF Download",
                 data=pdf_bytes,
-                file_name=(
-                    f"{client['name']}_CashFlow_{period_string}.pdf"
-                ),
+                file_name=f"{client['name']}_CashFlow_{period_string}.pdf",
                 mime="application/pdf",
                 use_container_width=True,
             )
-
         except Exception as e:
             st.error(f"❌ PDF Error: {e}")
 
 
-# ------------------------------------------------------------
-# RESET
-# ------------------------------------------------------------
-
+# RESET — only clears the current unsaved widget state; DB row is not deleted.
 with action_col3:
-
     if st.button("🔄 Reset", use_container_width=True):
-
         play_click_sound()
-
         clear_cf_widget_state()
-
-        st.session_state.cf_data = {}
-        st.session_state._cf_loaded_period = period_string
-        st.session_state.cf_period = period_string
-
+        st.session_state["cf_data"] = {}
+        st.session_state["cf_period"] = period_string
+        st.session_state["_cf_loaded_period"] = period_string
         st.rerun()
 
 
-# ------------------------------------------------------------
 # BACK TO CLIENT DETAIL
-# ------------------------------------------------------------
-
 with action_col4:
-
     if st.button(t("detail"), use_container_width=True):
-
         play_click_sound()
         st.switch_page("pages/2_Client_Detail.py")
 
@@ -949,11 +774,5 @@ with action_col4:
 # ============================================================
 
 st.divider()
-
-st.caption(
-    f"📅 {t('period_end')}: {format_date_mm(period_string)}"
-)
-
-st.caption(
-    f"👤 {t('clients')}: {client['name']}"
-)
+st.caption(f"📅 {t('period_end')}: {format_date_mm(period_string)}")
+st.caption(f"👤 {t('clients')}: {client['name']}")
