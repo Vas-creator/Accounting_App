@@ -774,13 +774,6 @@ with col1:
         key="tpl_mfg_direct_material",
     )
 
-    st.write(
-        "DEBUG MFG:",
-        "DATA:", st.session_state.tpl_data.get("mfg_direct_material"),
-        "RESULT:", mfg_direct_material,
-        "SESSION:", st.session_state.get("tpl_mfg_direct_material")
-    )
-
     st.session_state.tpl_data["mfg_direct_material"] = mfg_direct_material
 
     mfg_direct_labour = st.number_input(
@@ -840,13 +833,6 @@ with col1:
         step=1000,
         format="%d",
         key=f"cs_purchases_{st.session_state.tpl_loaded_period}",
-    )
-
-    st.write(
-        "DEBUG MFG:",
-        "DATA:", st.session_state.tpl_data.get("mfg_direct_material"),
-        "RESULT:", mfg_direct_material,
-        "SESSION:", st.session_state.get("tpl_mfg_direct_material")
     )
 
     st.session_state.tpl_data["add_purchases"] = cs_purchases
