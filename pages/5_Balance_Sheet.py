@@ -6,6 +6,7 @@ Period-based Data Loading + Real-time Calculation + Save + PDF + History
 
 import streamlit as st
 import json
+import uuid
 from datetime import date
 
 from core import db
@@ -142,9 +143,9 @@ def load_balance_sheet(period):
     existing = db.get_statement(
         client_id,
         "balance_sheet",
-        period_end=period,
+        period_end=period
     )
-
+    
     if existing:
         st.session_state.bs_data = decode_db_json(
             existing.get("data"),
@@ -356,23 +357,15 @@ with col_hist:
         )
 
         # History ရွေးချယ်မှု ပြောင်းလဲသွားပါက
-        # History ရွေးချယ်မှု ပြောင်းလဲသွားပါက
         if (
             selected_history != "-- ကာလအသစ် (New) --"
             and st.session_state.get("bs_history_applied")
             != selected_history
         ):
-
+            
             st.session_state.bs_history_applied = selected_history
-
-            # နောက်တစ်ကြိမ် rerun မှာ Date Widget မဖန်တီးမီ
             # ရွေးထားတဲ့ကာလကို သတ်မှတ်မည်။
             st.session_state.bs_target_period = selected_history
-
-            # ကာလဟောင်းကို ပြန် Load လုပ်ရန်
-            st.session_state.pop("bs_loaded_period", None)
-
-            st.rerun()
             # ကာလဟောင်းကို နောက်တစ်ကြိမ် Load လုပ်ရန်
             st.session_state.pop("bs_loaded_period", None)
 
@@ -422,10 +415,8 @@ with col_date:
 
 if st.session_state.get("bs_loaded_period") != selected_period:
 
-    # ကာလအသစ်/ကာလဟောင်းအလိုက် Widget Value အဟောင်းများ ရှင်းမည်။
     clear_bs_widget_state()
 
-    # သတ်မှတ်ထားသော Period တစ်ခုတည်းကိုသာ Load လုပ်မည်။
     try:
         load_balance_sheet(selected_period)
 
@@ -433,9 +424,7 @@ if st.session_state.get("bs_loaded_period") != selected_period:
         st.error(f"❌ Balance Sheet loading error: {e}")
         st.stop()
 
-    # Load ပြီးလျှင် Widget များကို Data အသစ်ဖြင့် ပြန်တည်ဆောက်မည်။
     st.rerun()
-
 
 # ============================================================
 # SESSION STATE FOR SHOW/HIDE
@@ -523,12 +512,20 @@ def num_input(
     state_key: str = None,
 ) -> float:
 
+    # Database က Load လုပ်ထားတဲ့ Data
     if default is None:
-        value = st.session_state.bs_data.get(key, 0.0)
+        initial_value = st.session_state.bs_data.get(key, 0.0)
     else:
-        value = st.session_state.bs_data.get(key, default)
+        initial_value = st.session_state.bs_data.get(key, default)
+
+    initial_value = int(initial_value or 0)
 
     prefix = "➖ " if is_deduction else ""
+
+    # Client + Period + Field အလိုက် Widget Key သီးခြားထားမယ်
+    widget_key = (
+        f"bs_input_{client_id}_{selected_period}_{key}"
+    )
 
     if state_key:
 
@@ -536,14 +533,18 @@ def num_input(
 
         with col_show:
 
-            default_show = (
-                st.session_state.get(state_key, {}).get(key, True)
+            show_key = (
+                f"show_bs_{client_id}_{selected_period}_{key}"
             )
+
+            if show_key not in st.session_state:
+                st.session_state[show_key] = (
+                    st.session_state.get(state_key, {}).get(key, True)
+                )
 
             show = st.checkbox(
                 " ",
-                value=default_show,
-                key=f"show_bs_{key}",
+                key=show_key,
             )
 
             st.session_state[state_key][key] = show
@@ -552,42 +553,39 @@ def num_input(
 
             if show:
 
+                # Widget State မရှိသေးမှသာ Database Value ထည့်မယ်
+                if widget_key not in st.session_state:
+                    st.session_state[widget_key] = initial_value
+
                 result = st.number_input(
                     f"{prefix}{label}",
-                    value=int(value) if value else 0,
                     min_value=0,
                     step=1000,
                     format="%d",
-                    key=f"bs_{key}",
+                    key=widget_key,
                     help=help_text,
                 )
 
-                st.session_state.bs_data[key] = result
-
-                return float(result)
-
             else:
-
-                st.session_state.bs_data[key] = 0.0
-
-                return 0.0
+                result = 0
 
     else:
 
+        if widget_key not in st.session_state:
+            st.session_state[widget_key] = initial_value
+
         result = st.number_input(
             f"{prefix}{label}",
-            value=int(value) if value else 0,
             min_value=0,
             step=1000,
             format="%d",
-            key=f"bs_{key}",
+            key=widget_key,
             help=help_text,
         )
 
-        st.session_state.bs_data[key] = result
-
-        return float(result)
-
+    st.session_state.bs_data[key] = result
+    
+    return float(result)
 
 def subtotal_box(
     label: str,
@@ -613,6 +611,7 @@ def subtotal_box(
     )
 
 
+
 def render_bs_custom_items(
     section_key: str,
     title: str,
@@ -625,27 +624,56 @@ def render_bs_custom_items(
         [],
     )
 
+    # Legacy items များအတွက် Unique ID ထည့်ပေးခြင်း
+    for item in items:
+        if not item.get("_id"):
+            item["_id"] = str(uuid.uuid4())
+
     for i, item in enumerate(items):
+
+        item_id = item["_id"]
 
         col_x, col_y, col_z = st.columns([2, 2, 1])
 
+        # Client + Period + Section + Item ID
+        # တစ်ခုချင်းစီအတွက် Widget Key သီးခြားထားမည်။
+        label_key = (
+            f"bs_custom_{client_id}_{selected_period}_"
+            f"{section_key}_{item_id}_label"
+        )
+
+        value_key = (
+            f"bs_custom_{client_id}_{selected_period}_"
+            f"{section_key}_{item_id}_value"
+        )
+
         with col_x:
+
+            if label_key not in st.session_state:
+                st.session_state[label_key] = item.get(
+                    "label",
+                    "",
+                )
 
             item["label"] = st.text_input(
                 "Name",
-                value=item.get("label", ""),
-                key=f"bs_{section_key}_label_{i}",
+                key=label_key,
                 label_visibility="collapsed",
             )
 
         with col_y:
 
+            if value_key not in st.session_state:
+                st.session_state[value_key] = int(
+                    item.get("value", 0) or 0
+                )
+
             item["value"] = st.number_input(
                 "Amount",
-                value=int(item.get("value", 0)),
+                min_value=0,
                 step=1000,
                 format="%d",
-                key=f"bs_{section_key}_value_{i}",
+                key=value_key,
                 label_visibility="collapsed",
             )
 
@@ -653,29 +681,39 @@ def render_bs_custom_items(
 
             if st.button(
                 "🗑️",
-                key=f"bs_{section_key}_del_{i}",
+                key=(
+                    f"bs_custom_{client_id}_{selected_period}_"
+                    f"{section_key}_{item_id}_del"
+                ),
             ):
 
                 items.pop(i)
 
-                st.session_state.bs_custom_data[section_key] = items
+                st.session_state.bs_custom_data[
+                    section_key
+                ] = items
 
                 st.rerun()
 
+    # Add Item
     if st.button(
         f"➕ {'Item ထည့်' if st.session_state.get('language') == 'my' else 'Add Item'}",
-        key=f"bs_add_{section_key}",
+        key=f"bs_custom_add_{client_id}_{selected_period}_{section_key}",
     ):
 
         items.append({
+            "_id": str(uuid.uuid4()),
             "label": "",
             "value": 0,
         })
 
-        st.session_state.bs_custom_data[section_key] = items
+        st.session_state.bs_custom_data[
+            section_key
+        ] = items
 
         st.rerun()
 
+    # Calculate Total
     total = sum(
         float(item.get("value", 0) or 0)
         for item in items
@@ -863,25 +901,19 @@ with col2:
         state_key="show_bs_equity",
     )
 
+    # Period-specific widget key
+    eq_profit_widget_key = f"bs_eq_profit_{client_id}_{selected_period}"
+
+    if eq_profit_widget_key not in st.session_state:
+        st.session_state[eq_profit_widget_key] = int(auto_net_profit)
+
     eq_profit = st.number_input(
-        "📈 ယခုနှစ် အမြတ် (Profit for the year) — Trading မှ"
-        if st.session_state.get("language") == "my"
-        else "📈 Profit for the year (from Trading)",
-        value=int(
-            st.session_state.bs_data.get(
-                "eq_profit",
-                auto_net_profit,
-            )
-        ),
+        f"📈 {t('profit_for_year')} (from Trading)",
         min_value=-999999999999,
         step=1000,
         format="%d",
-        key="bs_eq_profit_input",
-        help=(
-            "Trading & P&L page မှ auto-fill — လိုအပ်ရင် ပြင်လို့ရ"
-            if st.session_state.get("language") == "my"
-            else "Auto-filled from Trading & P&L"
-        ),
+        key=eq_profit_widget_key,
+        help="Auto-filled from Trading & P&L"
     )
 
     st.session_state.bs_data["eq_profit"] = eq_profit
@@ -1078,6 +1110,7 @@ with col1:
 
             bs_data = dict(st.session_state.bs_data)
 
+
             bs_data["ca_inventories"] = ca_inventories
             bs_data["ca_receivable"] = ca_receivable
             bs_data["ca_advance"] = ca_advance
@@ -1096,6 +1129,7 @@ with col1:
             bs_data["eq_retain"] = eq_retain
             bs_data["eq_profit"] = eq_profit
             bs_data["eq_drawing"] = eq_drawing
+
 
             db.save_statement(
                 client_id=client_id,
